@@ -363,9 +363,13 @@
   <div class="main-panel">
     <div class="page-header">
       <h1>Log Tools</h1>
-      <div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <a href="/" class="btn {% if source_type != 'file' %}btn-active{% endif %}" style="border:none;border-radius:0;text-decoration:none">HTTP</a>
+          <a href="/?source=file" class="btn {% if source_type == 'file' %}btn-active{% endif %}" style="border:none;border-left:1px solid var(--border);border-radius:0;text-decoration:none">Файл</a>
+        </div>
         {% if history_count > 0 %}
-          <button class="btn btn-danger" onclick="clearHistory()">Очистить историю</button>
+          <button class="btn btn-danger" onclick="clearHistory()">Очистить</button>
         {% endif %}
       </div>
     </div>
@@ -432,7 +436,8 @@ function showDetail(index, row) {
   document.querySelectorAll('.history-table tbody tr').forEach(r => r.classList.remove('selected'));
   if (row) row.classList.add('selected');
 
-  fetch('/log-tools/api/' + index + '/')
+  const params = new URLSearchParams(window.location.search);
+  fetch('/log-tools/api/' + index + '/' + (params.toString() ? '?' + params : ''))
     .then(r => r.json())
     .then(data => {
       const log = data.log;
@@ -525,7 +530,8 @@ function metricCard(label, value) {
 
 function clearHistory() {
   if (!confirm('Очистить всю историю логов?')) return;
-  fetch('/log-tools/api/clear/', {
+  const params = new URLSearchParams(window.location.search);
+  fetch('/log-tools/api/clear/' + (params.toString() ? '?' + params : ''), {
     method: 'POST',
     headers: {'X-Requested-With': 'XMLHttpRequest'}
   }).then(() => location.reload());

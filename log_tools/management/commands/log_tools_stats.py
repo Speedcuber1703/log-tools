@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
+from django.conf import settings
 
 from log_tools.file_storage import get_file_storage
 from log_tools._serialization import detect_n_plus_one
+from log_tools import LogContext
 
 
 class Command(BaseCommand):
     """Показывает статистику логов, собранных библиотекой log-tools.
 
-    Выводит общую статистику, список запросов и обнаруженные N+1 паттерны.
+    Автоматически включает файловое хранение и использует
+    LogContext для логирования выполнения команды.
 
     Example:
         python manage.py log_tools_stats
         python manage.py log_tools_stats --limit 10
         python manage.py log_tools_stats --json
         python manage.py log_tools_stats --clear
+        python manage.py log_tools_stats --show-html
     """
 
     help = "Показывает статистику логов log-tools"
@@ -47,13 +53,24 @@ class Command(BaseCommand):
             default=100,
             help="Порог медленных запросов в мс (по умолчанию 100)",
         )
+        parser.add_argument(
+            "--show-html",
+            action="store_true",
+            help="Открыть HTML-панель в браузере после выполнения",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        os.environ.setdefault("LOG_TOOLS_FILE_STORAGE", "True")
+
         storage = get_file_storage()
 
         if options["clear"]:
             storage.clear()
             self.stdout.write(self.style.SUCCESS("История логов очищена."))
+            return
+
+        if options["show_html"]:
+            self._open_html_panel()
             return
 
         logs = storage.all()
@@ -65,6 +82,17 @@ class Command(BaseCommand):
             self._output_json(logs, options)
         else:
             self._output_text(logs, options)
+
+    def _open_html_panel(self) -> None:
+        """Открывает HTML-панель в браузере."""
+        import webbrowser
+        from django.contrib.sessions.backends.db import SessionStore
+
+        base_url = getattr(settings, "LOG_TOOLS_PANEL_URL", "http://localhost:8000/log-tools/")
+        file_url = f"{base_url}?source=file"
+
+        self.stdout.write(self.style.HTTP_INFO(f"Открываю панель: {file_url}"))
+        webbrowser.open(file_url)
 
     def _output_text(self, logs: list, options: dict) -> None:
         limit = options["limit"]
@@ -108,11 +136,15 @@ class Command(BaseCommand):
         for i, log in enumerate(display_logs):
             status_color = self.style.SUCCESS if log.status_code < 400 else self.style.ERROR
             slow_marker = self.style.WARNING(" SLOW") if log.elapsed_ms > threshold else ""
+            source = getattr(log, "source", "http")
+            command = getattr(log, "command_name", None)
+            source_info = f" [{source}]" if source != "http" else ""
+            command_info = f" ({command})" if command else ""
 
             self.stdout.write(
                 f"  {i+1:3d}. {log.method:6s} {log.path}"
                 f"  {status_color(str(log.status_code))}"
-                f"  {log.elapsed_ms:.1f}мс{slow_marker}"
+                f"  {log.elapsed_ms:.1f}мс{slow_marker}{source_info}{command_info}"
             )
             self.stdout.write(
                 f"       SQL: {log.summary.get('sql_count', 0)}  "
@@ -161,6 +193,8 @@ class Command(BaseCommand):
                 "summary": log.summary,
                 "n_plus_one": np1,
                 "entries": log.entries,
+                "source": getattr(log, "source", "http"),
+                "command_name": getattr(log, "command_name", None),
             })
 
         self.stdout.write(json.dumps(data, indent=2, ensure_ascii=False))
