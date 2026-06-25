@@ -86,17 +86,22 @@ def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
         index: Индекс лога в истории (0 — последний).
 
     Returns:
-        JSON-ответ с полными данными лога.
+        JSON-ответ с полными данными лога и обнаруженными N+1 паттернами.
     """
+    from ._serialization import detect_n_plus_one
+
     storage = get_storage()
     logs = storage.all()
     if index < 0 or index >= len(logs):
         return JsonResponse({"error": "Log not found"}, status=404)
 
     log = logs[index]
+    n_plus_one = detect_n_plus_one(log.entries)
+
     return JsonResponse({
         "log": _serialize_request_log(log),
         "entries": log.entries,
+        "n_plus_one": n_plus_one,
     }, json_dumps_params={"indent": 2})
 
 
