@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .collector import LogEntry
@@ -27,18 +28,21 @@ def serialize_entry(entry: LogEntry) -> dict[str, Any]:
 
 
 def format_sql(sql: str, params: Any = None) -> str:
-    """Форматирует SQL-запрос и подставляет параметры.
+    """Форматирует SQL-запрос и подставляет параметры inline.
 
-    Использует ``sqlparse`` для форматирования. Если форматирование
-    недоступно, возвращает исходный запрос.
+    Заменяет ``?`` на реальные значения из ``params``.
+    Затем форматирует через ``sqlparse``.
 
     Args:
         sql: Текст SQL-запроса.
-        params: Параметры запроса для подстановки.
+        params: Параметры запроса (список, кортеж или dict).
 
     Returns:
-        Отформатированный SQL-запрос.
+        Отформатированный SQL-запрос с подставленными параметрами.
     """
+    if params:
+        sql = _substitute_params(sql, params)
+
     try:
         import sqlparse
 
@@ -50,7 +54,62 @@ def format_sql(sql: str, params: Any = None) -> str:
     except ImportError:
         formatted = sql
 
-    if params:
-        formatted = f"{formatted}\n-- params: {params}"
-
     return formatted
+
+
+def _substitute_params(sql: str, params: Any) -> str:
+    """Подставляет параметры в SQL-запрос.
+
+    Поддерживает:
+    - ``?`` плейсхолдеры (SQLite, MySQL)
+    - ``%s`` плейсхолдеры (PostgreSQL)
+    - Позиционные параметры (список/кортеж)
+    - Именованные параметры (dict с ``%(name)s``)
+
+    Args:
+        sql: SQL-запрос с плейсхолдерами.
+        params: Значения параметров.
+
+    Returns:
+        SQL-запрос с подставленными значениями.
+    """
+    if isinstance(params, dict):
+        for key, value in params.items():
+            sql = sql.replace(f"%({key})s", _quote(value))
+        return sql
+
+    if isinstance(params, (list, tuple)):
+        # ? плейсхолдеры
+        if "?" in sql:
+            for value in params:
+                sql = sql.replace("?", _quote(value), 1)
+            return sql
+
+        # %s плейсхолдеры
+        if "%s" in sql:
+            for value in params:
+                sql = sql.replace("%s", _quote(value), 1)
+            return sql
+
+    return sql
+
+
+def _quote(value: Any) -> str:
+    """Форматирует значение SQL-параметра для подстановки в запрос.
+
+    Args:
+        value: Значение параметра.
+
+    Returns:
+        Строковое представление значения, безопасное для SQL.
+    """
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, bytes):
+        return f"X'{value.hex()}'"
+    escaped = str(value).replace("'", "''")
+    return f"'{escaped}'"

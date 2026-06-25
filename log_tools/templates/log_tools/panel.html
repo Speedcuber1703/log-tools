@@ -2,212 +2,548 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2128;
+    --bg-hover: #1f242c;
+    --border: #30363d;
+    --border-light: #21262d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #656d76;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, monospace; background: #0f1117; color: #e1e4e8; padding: 16px; }
-  h1 { font-size: 18px; margin-bottom: 12px; color: #58a6ff; }
-  h2 { font-size: 14px; margin: 16px 0 8px; color: #8b949e; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    overflow: hidden;
+  }
 
-  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; }
-  .card .label { font-size: 11px; color: #8b949e; text-transform: uppercase; }
-  .card .value { font-size: 20px; font-weight: bold; margin-top: 4px; }
-  .card .value.slow { color: #f85149; }
-  .card .value.ok { color: #3fb950; }
+  /* Layout */
+  .layout {
+    display: flex;
+    height: 100vh;
+  }
+  .main-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    min-width: 0;
+  }
+  .sidebar {
+    width: 0;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    overflow: hidden;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar.open {
+    width: 45%;
+    min-width: 400px;
+    max-width: 700px;
+  }
+  .sidebar-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .sidebar-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sidebar-header .meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+  }
+  .sidebar-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .sidebar-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .sidebar-content {
+    overflow-y: auto;
+    padding: 16px;
+    flex: 1;
+  }
 
-  .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .history-table th { text-align: left; padding: 8px; color: #8b949e; border-bottom: 1px solid #30363d; font-size: 11px; text-transform: uppercase; }
-  .history-table td { padding: 8px; border-bottom: 1px solid #21262d; }
-  .history-table tr:hover { background: #161b22; cursor: pointer; }
-  .method { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
-  .method.GET { background: #23863620; color: #3fb950; }
-  .method.POST { background: #388bfd20; color: #58a6ff; }
-  .method.PUT { background: #d2992220; color: #d29922; }
-  .method.DELETE { background: #f8514920; color: #f85149; }
-  .status { font-weight: bold; }
-  .status.s2xx { color: #3fb950; }
-  .status.s3xx { color: #58a6ff; }
-  .status.s4xx { color: #d29922; }
-  .status.s5xx { color: #f85149; }
-  .dur { color: #8b949e; }
-  .dur.slow { color: #f85149; font-weight: bold; }
+  /* Header */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+  h2 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; }
 
-  .detail-panel { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; margin-top: 12px; }
-  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  .detail-header h3 { font-size: 14px; color: #58a6ff; }
-  .close-btn { background: #30363d; border: none; color: #e1e4e8; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .close-btn:hover { background: #3d444d; }
+  /* Metrics cards */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .metric {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .metric .icon { font-size: 14px; margin-bottom: 4px; }
+  .metric .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+  .metric .value { font-size: 20px; font-weight: 700; margin-top: 2px; font-family: var(--font-mono); }
+  .metric .bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: var(--green);
+    transition: width 0.3s ease;
+  }
+  .metric .bar.warn { background: var(--yellow); }
+  .metric .bar.danger { background: var(--red); }
+  .metric.ok .value { color: var(--green); }
+  .metric.warn .value { color: var(--yellow); }
+  .metric.slow .value { color: var(--red); }
 
-  .entries { display: flex; flex-direction: column; gap: 4px; }
-  .entry { background: #0d1117; border-radius: 4px; padding: 8px 12px; font-size: 13px; border-left: 3px solid #30363d; }
-  .entry.sql { border-left-color: #58a6ff; }
-  .entry.redis { border-left-color: #d29922; }
-  .entry.timing { border-left-color: #3fb950; }
-  .entry.slow { border-left-color: #f85149; }
-  .entry .type { font-weight: bold; margin-right: 8px; }
-  .entry .type.sql { color: #58a6ff; }
-  .entry .type.redis { color: #d29922; }
-  .entry .type.timing { color: #3fb950; }
-  .entry .dur { color: #8b949e; float: right; }
-  .entry .dur.slow { color: #f85149; font-weight: bold; }
-  .sql-text { color: #c9d1d9; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin-top: 4px; background: #161b22; padding: 8px; border-radius: 4px; border: 1px solid #21262d; }
-  .redis-cmd { color: #d29922; font-family: monospace; margin-top: 4px; }
+  /* History table */
+  .table-wrapper {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .history-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .history-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .history-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+  }
+  .history-table tbody tr:hover {
+    background: var(--bg-hover);
+    cursor: pointer;
+  }
+  .history-table tbody tr.selected {
+    background: var(--bg-tertiary);
+    border-left: 2px solid var(--blue);
+  }
+  .history-table tbody tr:nth-child(even) {
+    background: rgba(22, 27, 34, 0.5);
+  }
+  .history-table tbody tr:nth-child(even):hover {
+    background: var(--bg-hover);
+  }
 
-  .empty { color: #8b949e; padding: 24px; text-align: center; }
-  .clear-btn { background: #f8514920; border: 1px solid #f8514940; color: #f85149; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .clear-btn:hover { background: #f8514940; }
+  /* Badges */
+  .method {
+    display: inline-block;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.3px;
+  }
+  .method.GET { background: rgba(63,185,80,0.15); color: var(--green); }
+  .method.POST { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .method.PUT, .method.PATCH { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .method.DELETE { background: rgba(248,81,73,0.15); color: var(--red); }
+
+  .status-badge {
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .status-badge.s2xx { color: var(--green); }
+  .status-badge.s3xx { color: var(--blue); }
+  .status-badge.s4xx { color: var(--yellow); }
+  .status-badge.s5xx { color: var(--red); }
+
+  .slow-badge {
+    display: inline-block;
+    background: rgba(248,81,73,0.15);
+    color: var(--red);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-left: 4px;
+  }
+
+  .path-text {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .time-text {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .time-text.slow { color: var(--red); font-weight: 600; }
+  .sql-count { font-family: var(--font-mono); font-weight: 500; }
+  .count-zero { color: var(--text-muted); }
+
+  /* Detail entries in sidebar */
+  .detail-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .detail-entries { display: flex; flex-direction: column; gap: 6px; }
+
+  .entry {
+    background: var(--bg-primary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    border-left: 3px solid var(--border);
+  }
+  .entry.sql { border-left-color: var(--blue); }
+  .entry.redis { border-left-color: var(--yellow); }
+  .entry.timing { border-left-color: var(--green); }
+  .entry.log { border-left-color: var(--text-muted); }
+  .entry.slow { border-left-color: var(--red); }
+  .entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .entry-type {
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .entry-type.sql { color: var(--blue); }
+  .entry-type.redis { color: var(--yellow); }
+  .entry-type.timing { color: var(--green); }
+  .entry-type.log { color: var(--text-muted); }
+  .entry-dur {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .entry-dur.slow { color: var(--red); font-weight: 600; }
+
+  /* SQL block */
+  .sql-block {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+  }
+  .sql-block .kw { color: var(--blue); font-weight: 500; }
+  .sql-block .str { color: var(--green); }
+  .sql-block .num { color: var(--yellow); }
+  .sql-block .op { color: var(--red); }
+  .sql-block .null { color: var(--text-muted); font-style: italic; }
+
+  /* Redis block */
+  .redis-block {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--yellow);
+    margin-top: 4px;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: var(--bg-tertiary); }
+  .btn-danger { border-color: rgba(248,81,73,0.4); color: var(--red); }
+  .btn-danger:hover { background: rgba(248,81,73,0.1); }
+
+  .empty { color: var(--text-muted); padding: 32px; text-align: center; font-size: 13px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* Section divider */
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border-light);
+    margin: 16px 0;
+  }
 </style>
 </head>
 <body>
 
-<h1>Log Tools</h1>
+<div class="layout">
+  <div class="main-panel">
+    <div class="page-header">
+      <h1>Log Tools</h1>
+      <div>
+        {% if history_count > 0 %}
+          <button class="btn btn-danger" onclick="clearHistory()">Очистить историю</button>
+        {% endif %}
+      </div>
+    </div>
 
-{% if current_summary %}
-<h2>Текущий запрос</h2>
-<div class="summary">
-  <div class="card">
-    <div class="label">Время</div>
-    <div class="value {% if current_summary.elapsed_ms > 100 %}slow{% else %}ok{% endif %}">{{ current_summary.elapsed_ms|floatformat:1 }}ms</div>
+    {% if current_summary %}
+    <div class="metrics">
+      <div class="metric {% if current_summary.elapsed_ms > 100 %}slow{% elif current_summary.elapsed_ms > 50 %}warn{% else %}ok{% endif %}">
+        <div class="icon">&#9201;</div>
+        <div class="label">Общее время</div>
+        <div class="value">{{ current_summary.elapsed_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
+        <div class="bar {% if current_summary.elapsed_ms > 100 %}danger{% elif current_summary.elapsed_ms > 50 %}warn{% endif %}" style="width: {% widthratio current_summary.elapsed_ms 200 100 %}%"></div>
+      </div>
+      <div class="metric">
+        <div class="icon">&#128196;</div>
+        <div class="label">SQL запросов</div>
+        <div class="value">{{ current_summary.sql_count }}</div>
+      </div>
+      <div class="metric {% if current_summary.sql_total_ms > 50 %}slow{% elif current_summary.sql_total_ms > 20 %}warn{% else %}ok{% endif %}">
+        <div class="icon">&#9889;</div>
+        <div class="label">SQL время</div>
+        <div class="value">{{ current_summary.sql_total_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
+      </div>
+      <div class="metric">
+        <div class="icon">&#128268;</div>
+        <div class="label">Redis</div>
+        <div class="value">{{ current_summary.redis_count }}</div>
+      </div>
+      <div class="metric {% if current_summary.redis_total_ms > 50 %}slow{% elif current_summary.redis_total_ms > 20 %}warn{% else %}ok{% endif %}">
+        <div class="icon">&#9889;</div>
+        <div class="label">Redis время</div>
+        <div class="value">{{ current_summary.redis_total_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
+      </div>
+      <div class="metric">
+        <div class="icon">&#128203;</div>
+        <div class="label">Записей</div>
+        <div class="value">{{ current_summary.total_entries }}</div>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+    {% endif %}
+
+    <h2>История запросов ({{ history_count }})</h2>
+
+    {% if history %}
+    <div class="table-wrapper">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th style="width:70px">Метод</th>
+            <th>Путь</th>
+            <th style="width:50px">Статус</th>
+            <th style="width:80px">Время</th>
+            <th style="width:50px">SQL</th>
+            <th style="width:50px">Redis</th>
+            <th style="width:90px">Записей</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for log in history %}
+          <tr onclick="showDetail({{ forloop.counter0 }}, this)" data-index="{{ forloop.counter0 }}">
+            <td><span class="method {{ log.method }}">{{ log.method }}</span></td>
+            <td><span class="path-text">{{ log.path }}</span></td>
+            <td><span class="status-badge {% if log.status_code < 300 %}s2xx{% elif log.status_code < 400 %}s3xx{% elif log.status_code < 500 %}s4xx{% else %}s5xx{% endif %}">{{ log.status_code }}</span></td>
+            <td>
+              <span class="time-text {% if log.elapsed_ms > 100 %}slow{% endif %}">{{ log.elapsed_ms|floatformat:1 }}ms</span>
+              {% if log.elapsed_ms > 100 %}<span class="slow-badge">slow</span>{% endif %}
+            </td>
+            <td><span class="sql-count {% if log.summary.sql_count == 0 %}count-zero{% endif %}">{{ log.summary.sql_count }}</span></td>
+            <td><span class="sql-count {% if log.summary.redis_count == 0 %}count-zero{% endif %}">{{ log.summary.redis_count }}</span></td>
+            <td><span class="sql-count">{{ log.summary.total_entries }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Пока нет сохранённых логов. Выполните запрос к приложению.</div>
+    {% endif %}
   </div>
-  <div class="card">
-    <div class="label">SQL</div>
-    <div class="value">{{ current_summary.sql_count }}</div>
-  </div>
-  <div class="card">
-    <div class="label">SQL время</div>
-    <div class="value {% if current_summary.sql_total_ms > 50 %}slow{% else %}ok{% endif %}">{{ current_summary.sql_total_ms|floatformat:1 }}ms</div>
-  </div>
-  <div class="card">
-    <div class="label">Redis</div>
-    <div class="value">{{ current_summary.redis_count }}</div>
-  </div>
-  <div class="card">
-    <div class="label">Redis время</div>
-    <div class="value {% if current_summary.redis_total_ms > 50 %}slow{% else %}ok{% endif %}">{{ current_summary.redis_total_ms|floatformat:1 }}ms</div>
-  </div>
-  <div class="card">
-    <div class="label">Записей</div>
-    <div class="value">{{ current_summary.total_entries }}</div>
+
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div style="overflow:hidden;text-overflow:ellipsis">
+        <h3 id="sidebar-title">—</h3>
+      </div>
+      <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
+    </div>
+    <div class="sidebar-content" id="sidebar-content"></div>
   </div>
 </div>
-
-<div class="entries">
-{% for entry in current_entries %}
-  <div class="entry {{ entry.type }} {% if entry.is_slow %}slow{% endif %}">
-    <span class="type {{ entry.type }}">{{ entry.type|upper }}</span>
-    {% if entry.duration_ms is not None %}
-      <span class="dur {% if entry.is_slow %}slow{% endif %}">{{ entry.duration_ms|floatformat:2 }}ms</span>
-    {% endif %}
-    {% if entry.type == "sql" %}
-      <div class="sql-text">{{ entry.data.sql }}</div>
-    {% elif entry.type == "redis" %}
-      <div class="redis-cmd">{{ entry.data.command }} {{ entry.data.args }}</div>
-    {% elif entry.type == "timing" %}
-      <span>{{ entry.data.label }}</span>
-    {% elif entry.type == "log" %}
-      <span>{{ entry.data.message }}</span>
-    {% endif %}
-  </div>
-{% endfor %}
-</div>
-{% endif %}
-
-<h2>
-  История запросов ({{ history_count }})
-  {% if history_count > 0 %}
-    <button class="clear-btn" onclick="clearHistory()" style="margin-left: 12px; vertical-align: middle;">Очистить</button>
-  {% endif %}
-</h2>
-
-<div id="detail-container"></div>
-
-{% if history %}
-<table class="history-table">
-  <thead>
-    <tr>
-      <th>Метод</th>
-      <th>Путь</th>
-      <th>Статус</th>
-      <th>Время</th>
-      <th>SQL</th>
-      <th>Redis</th>
-      <th>Записей</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for log in history %}
-    <tr onclick="showDetail({{ forloop.counter0 }})">
-      <td><span class="method {{ log.method }}">{{ log.method }}</span></td>
-      <td>{{ log.path }}</td>
-      <td><span class="status {% if log.status_code < 300 %}s2xx{% elif log.status_code < 400 %}s3xx{% elif log.status_code < 500 %}s4xx{% else %}s5xx{% endif %}">{{ log.status_code }}</span></td>
-      <td><span class="dur {% if log.elapsed_ms > 100 %}slow{% endif %}">{{ log.elapsed_ms|floatformat:1 }}ms</span></td>
-      <td>{{ log.summary.sql_count }}</td>
-      <td>{{ log.summary.redis_count }}</td>
-      <td>{{ log.summary.total_entries }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-  <div class="empty">Пока нет сохранённых логов. Выполните запрос к приложению.</div>
-{% endif %}
 
 <script>
-function showDetail(index) {
+let currentIndex = -1;
+
+function showDetail(index, row) {
+  if (currentIndex === index) { closeSidebar(); return; }
+  currentIndex = index;
+
+  document.querySelectorAll('.history-table tbody tr').forEach(r => r.classList.remove('selected'));
+  if (row) row.classList.add('selected');
+
   fetch('/log-tools/api/' + index + '/')
     .then(r => r.json())
     .then(data => {
-      const container = document.getElementById('detail-container');
       const log = data.log;
-      let html = '<div class="detail-panel">';
-      html += '<div class="detail-header"><h3>' + log.method + ' ' + log.path + ' (' + log.status_code + ')</h3>';
-      html += '<button class="close-btn" onclick="document.getElementById(\'detail-container\').innerHTML=\'\'">Закрыть</button></div>';
+      document.getElementById('sidebar-title').textContent = log.method + ' ' + log.path;
 
-      html += '<div class="summary">';
-      html += '<div class="card"><div class="label">Время</div><div class="value">' + log.elapsed_ms.toFixed(1) + 'ms</div></div>';
-      html += '<div class="card"><div class="label">SQL</div><div class="value">' + log.summary.sql_count + '</div></div>';
-      html += '<div class="card"><div class="label">SQL время</div><div class="value">' + log.summary.sql_total_ms.toFixed(1) + 'ms</div></div>';
-      html += '<div class="card"><div class="label">Redis</div><div class="value">' + log.summary.redis_count + '</div></div>';
-      html += '<div class="card"><div class="label">Redis время</div><div class="value">' + log.summary.redis_total_ms.toFixed(1) + 'ms</div></div>';
+      let html = '<div class="detail-summary">';
+      html += metricCard('Общее время', log.elapsed_ms.toFixed(1) + 'ms');
+      html += metricCard('SQL', log.summary.sql_count + ' (' + log.summary.sql_total_ms.toFixed(1) + 'ms)');
+      html += metricCard('Redis', log.summary.redis_count + ' (' + log.summary.redis_total_ms.toFixed(1) + 'ms)');
       html += '</div>';
 
-      html += '<div class="entries">';
+      html += '<div class="detail-entries">';
       data.entries.forEach(e => {
         const slowClass = e.is_slow ? ' slow' : '';
         html += '<div class="entry ' + e.type + slowClass + '">';
-        html += '<span class="type ' + e.type + '">' + e.type.toUpperCase() + '</span>';
+        html += '<div class="entry-header">';
+        html += '<span class="entry-type ' + e.type + '">' + e.type.toUpperCase() + '</span>';
         if (e.duration_ms !== null) {
-          html += '<span class="dur' + slowClass + '">' + e.duration_ms.toFixed(2) + 'ms</span>';
+          html += '<span class="entry-dur' + slowClass + '">' + e.duration_ms.toFixed(2) + 'ms</span>';
         }
+        html += '</div>';
+
         if (e.type === 'sql') {
-          html += '<div class="sql-text">' + escapeHtml(e.data.sql) + '</div>';
+          html += '<div class="sql-block">' + highlightSql(e.data.sql) + '</div>';
         } else if (e.type === 'redis') {
-          html += '<div class="redis-cmd">' + e.data.command + ' ' + JSON.stringify(e.data.args) + '</div>';
+          html += '<div class="redis-block">' + e.data.command + ' ' + escJson(e.data.args) + '</div>';
         } else if (e.type === 'timing') {
-          html += '<span>' + e.data.label + '</span>';
+          html += '<span style="color:var(--text-secondary)">' + e.data.label + '</span>';
         } else if (e.type === 'log') {
-          html += '<span>' + e.data.message + '</span>';
+          html += '<span style="color:var(--text-secondary)">' + e.data.message + '</span>';
         }
         html += '</div>';
       });
-      html += '</div></div>';
-      container.innerHTML = html;
+      html += '</div>';
+
+      document.getElementById('sidebar-content').innerHTML = html;
+      document.getElementById('sidebar').classList.add('open');
     });
 }
 
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.querySelectorAll('.history-table tbody tr').forEach(r => r.classList.remove('selected'));
+  currentIndex = -1;
+}
+
+function highlightSql(sql) {
+  if (!sql) return '';
+  let h = escHtml(sql);
+
+  const keywords = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'IN', 'NOT', 'NULL', 'IS',
+    'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'ALTER', 'DROP',
+    'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AS',
+    'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET',
+    'BETWEEN', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+    'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'DISTINCT', 'ASC', 'DESC',
+    'TRUE', 'FALSE', 'PRIMARY', 'KEY', 'DEFAULT', 'INDEX', 'TABLE'];
+
+  keywords.forEach(kw => {
+    const re = new RegExp('\\b(' + kw + ')\\b', 'gi');
+    h = h.replace(re, '<span class="kw">$1</span>');
+  });
+
+  h = h.replace(/'([^']*)'/g, '<span class="str">\'$1\'</span>');
+  h = h.replace(/\b(\d+\.?\d*)\b/g, '<span class="num">$1</span>');
+  h = h.replace(/\bNULL\b/gi, '<span class="null">NULL</span>');
+
+  return h;
+}
+
+function metricCard(label, value) {
+  return '<div class="metric"><div class="label">' + label + '</div><div class="value" style="font-size:14px">' + value + '</div></div>';
+}
+
 function clearHistory() {
+  if (!confirm('Очистить всю историю логов?')) return;
   fetch('/log-tools/api/clear/', {
     method: 'POST',
     headers: {'X-Requested-With': 'XMLHttpRequest'}
   }).then(() => location.reload());
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
+
+function escJson(v) {
+  try { return JSON.stringify(v); } catch(e) { return String(v); }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSidebar();
+});
 </script>
 </body>
 </html>
