@@ -17,7 +17,9 @@ def serialize_entry(entry: LogEntry) -> dict[str, Any]:
     """
     data = dict(entry.data)
     if entry.type.value == "sql" and "sql" in data:
-        data["sql"] = format_sql(data.get("sql", ""), data.get("params"))
+        raw_sql = data.get("sql", "")
+        data["sql"] = format_sql(raw_sql, data.get("params"))
+        data["normalized_sql"] = normalize_sql(raw_sql)
     return {
         "type": entry.type.value,
         "timestamp": entry.timestamp,
@@ -56,6 +58,65 @@ def format_sql(sql: str, params: Any = None) -> str:
 
     return formatted
 
+
+
+
+def detect_n_plus_one(entries: list) -> list:
+    """Обнаруживает N+1 паттерны в SQL-запросах.
+
+    N+1 — это когда один запрос получает список объектов,
+    а затем для каждого объекта делается отдельный запрос.
+
+    Args:
+        entries: Список записей лога (из ``LogEntry`` или сериализованных).
+
+    Returns:
+        Список словарей с информацией об обнаруженных N+1 паттернах:
+        [{"table": "app_user", "count": 5, "total_ms": 12.3}]
+    """
+    import re
+
+    sql_entries = [e for e in entries if e.get("type") == "sql"]
+    if len(sql_entries) < 2:
+        return []
+
+    patterns: dict[str, dict] = {}
+    for entry in sql_entries:
+        sql = entry.get("data", {}).get("sql", "")
+        normalized = entry.get("data", {}).get("normalized_sql", "")
+        duration = entry.get("duration_ms") or 0
+
+        table_match = re.search(r'from\s+"?([a-z_]+)"?', normalized)
+        if not table_match:
+            continue
+        table = table_match.group(1)
+
+        where_match = re.search(r'where\s+.*=\s*\?', normalized)
+        if not where_match:
+            continue
+
+        base_query = re.sub(r'WHERE.*', 'WHERE ?', normalized)
+
+        if table not in patterns:
+            patterns[table] = {}
+        if base_query not in patterns[table]:
+            patterns[table][base_query] = {"count": 0, "total_ms": 0.0, "sql": sql}
+        patterns[table][base_query]["count"] += 1
+        patterns[table][base_query]["total_ms"] += duration
+
+    results = []
+    for table, queries in patterns.items():
+        for query, info in queries.items():
+            if info["count"] >= 3:
+                results.append({
+                    "table": table,
+                    "count": info["count"],
+                    "total_ms": round(info["total_ms"], 2),
+                    "sql": info["sql"],
+                })
+
+    results.sort(key=lambda x: x["count"], reverse=True)
+    return results
 
 def _substitute_params(sql: str, params: Any) -> str:
     """Подставляет параметры в SQL-запрос.
@@ -130,6 +191,8 @@ def normalize_sql(sql: str) -> str:
     normalized = sql
     normalized = re.sub(r"'[^']*'", "?", normalized)
     normalized = re.sub(r"\d+\.?\d*", "?", normalized)
+    normalized = re.sub(r"%s", "?", normalized)
+    normalized = re.sub(r"\?", "?", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     normalized = normalized.lower()
     return normalized

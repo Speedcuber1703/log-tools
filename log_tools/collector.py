@@ -252,11 +252,21 @@ class Collector:
             - ``redis_total_ms`` — суммарное время Redis
             - ``redis_slow`` — список медленных Redis-команд
             - ``total_entries`` — общее количество записей
+            - ``sql_duplicates`` — словарь {нормализованный_sql: количество} для дублей
         """
+        from ._serialization import normalize_sql
+
         sql = self.sql_entries()
         redis = self.redis_entries()
         total_sql_ms = sum(entry.duration_ms or 0 for entry in sql)
         total_redis_ms = sum(entry.duration_ms or 0 for entry in redis)
+
+        sql_dup_map: dict[str, int] = {}
+        for entry in sql:
+            raw = entry.data.get("sql", "")
+            normalized = normalize_sql(raw)
+            sql_dup_map[normalized] = sql_dup_map.get(normalized, 0) + 1
+
         return {
             "name": self.name,
             "elapsed_ms": self.elapsed_ms(),
@@ -267,6 +277,7 @@ class Collector:
             "redis_total_ms": total_redis_ms,
             "redis_slow": [{"command": e.data.get("command", ""), "duration_ms": e.duration_ms} for e in redis if e.is_slow],
             "total_entries": len(self.entries),
+            "sql_duplicates": sql_dup_map,
         }
 
 

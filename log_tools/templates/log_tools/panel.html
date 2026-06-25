@@ -275,6 +275,26 @@
     color: var(--text-secondary);
   }
   .entry-dur.slow { color: var(--red); font-weight: 600; }
+  .dup-badge {
+    display: inline-block;
+    background: rgba(210,153,34,0.15);
+    color: var(--yellow);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .n-plus-one-badge {
+    display: inline-block;
+    background: rgba(248,81,73,0.15);
+    color: var(--red);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
 
   /* SQL block */
   .sql-block {
@@ -380,32 +400,6 @@
       </div>
     </div>
 
-    {% if aggregate.duplicates %}
-    <div style="margin-top: 12px; margin-bottom: 16px;">
-      <h2 style="margin-bottom: 8px;">Дублирующиеся SQL-запросы</h2>
-      <div class="table-wrapper">
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>SQL запрос</th>
-              <th style="width:80px">Кол-во</th>
-              <th style="width:100px">Суммарное время</th>
-            </tr>
-          </thead>
-          <tbody>
-          {% for dup in aggregate.duplicates %}
-            <tr>
-              <td><div class="sql-block" style="font-size:11px;padding:6px 8px;margin:0;border:none">{{ dup.sql|truncatewords:30 }}</div></td>
-              <td><span class="slow-badge">{{ dup.count }}x</span></td>
-              <td><span class="time-text">{{ dup.total_ms }}ms</span></td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-
     <hr class="section-divider">
     {% endif %}
 
@@ -481,6 +475,18 @@ function showDetail(index, row) {
       html += metricCard('Redis', log.summary.redis_count + ' (' + log.summary.redis_total_ms.toFixed(1) + 'ms)');
       html += '</div>';
 
+      if (data.n_plus_one && data.n_plus_one.length > 0) {
+        html += '<div style="margin-bottom:12px">';
+        html += '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:8px">&#9888; Обнаружены N+1 паттерны</div>';
+        data.n_plus_one.forEach(np => {
+          html += '<div class="entry" style="border-left-color:var(--red);margin-bottom:4px">';
+          html += '<div class="entry-header"><span class="entry-type" style="color:var(--red)">N+1: ' + np.table + '</span>';
+          html += '<span class="entry-dur" style="color:var(--red)">' + np.count + 'x (' + np.total_ms + 'ms)</span></div>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
       html += '<div class="detail-entries">';
       data.entries.forEach(e => {
         const slowClass = e.is_slow ? ' slow' : '';
@@ -494,6 +500,10 @@ function showDetail(index, row) {
 
         if (e.type === 'sql') {
           html += '<div class="sql-block">' + highlightSql(e.data.sql) + '</div>';
+          const dupCount = log.summary.sql_duplicates[e.data.normalized_sql] || 1;
+          if (dupCount > 1) {
+            html += '<div style="margin-top:4px;font-size:11px;color:var(--yellow)">&#9888; Этот запрос повторялся <strong>' + dupCount + 'x</strong> в этом запросе</div>';
+          }
         } else if (e.type === 'redis') {
           html += '<div class="redis-block">' + e.data.command + ' ' + escJson(e.data.args) + '</div>';
         } else if (e.type === 'timing') {
