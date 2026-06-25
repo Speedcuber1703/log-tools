@@ -11,26 +11,22 @@ from .file_storage import get_file_storage, RequestLog as FileRequestLog
 from ._serialization import serialize_entry
 
 
-def __get_storage():
-    """Возвращает активное хранилище (файловое или in-memory)."""
+def _get_storage_for_request(request: HttpRequest):
+    """Возвращает хранилище в зависимости от параметра source в запросе.
+
+    Если ``?source=file`` — возвращает файловое хранилище.
+    Иначе — хранилище по умолчанию (из настроек).
+    """
+    if request.GET.get("source") == "file":
+        return get_file_storage()
     from .settings import LOG_TOOLS
     if LOG_TOOLS.FILE_STORAGE:
         return get_file_storage()
-    return _get_storage()
+    return get_storage()
 
 
 def _get_request_collector(request: HttpRequest) -> Collector | None:
-    """Извлекает коллектор из запроса или из thread-local.
-
-    Сначала проверяет текущий thread-local коллектор, затем —
-    коллектор, привязанный к запросу middleware.
-
-    Args:
-        request: HTTP-запрос.
-
-    Returns:
-        ``Collector`` или ``None``.
-    """
+    """Извлекает коллектор из запроса или из thread-local."""
     collector = current_collector()
     if collector is None:
         collector = getattr(request, "_log_tools_collector", None)
@@ -38,17 +34,7 @@ def _get_request_collector(request: HttpRequest) -> Collector | None:
 
 
 def panel_api_view(request: HttpRequest) -> JsonResponse:
-    """Возвращает данные текущего или последнего запроса в формате JSON.
-
-    Если есть активный коллектор — возвращает его.
-    Иначе — последний лог из истории.
-
-    Args:
-        request: HTTP-запрос.
-
-    Returns:
-        JSON-ответ со сводкой и списком записей.
-    """
+    """Возвращает данные текущего или последнего запроса в формате JSON."""
     collector = _get_request_collector(request)
     if collector is not None:
         data: dict[str, object] = {
@@ -57,7 +43,7 @@ def panel_api_view(request: HttpRequest) -> JsonResponse:
         }
         return JsonResponse(data, json_dumps_params={"indent": 2})
 
-    storage = _get_storage()
+    storage = _get_storage_for_request(request)
     logs = storage.all()
     if not logs:
         return JsonResponse({"error": "No logs available"}, status=404)
@@ -68,17 +54,8 @@ def panel_api_view(request: HttpRequest) -> JsonResponse:
 
 
 def panel_history_api_view(request: HttpRequest) -> JsonResponse:
-    """Возвращает историю последних запросов в формате JSON.
-
-    Supports query参数 ``limit`` (по умолчанию 50, максимум 200).
-
-    Args:
-        request: HTTP-запрос.
-
-    Returns:
-        JSON-ответ со списком логов.
-    """
-    storage = _get_storage()
+    """Возвращает историю последних запросов в формате JSON."""
+    storage = _get_storage_for_request(request)
     limit = min(int(request.GET.get("limit", 50)), 200)
     logs = storage.all()[:limit]
     return JsonResponse({
@@ -88,18 +65,10 @@ def panel_history_api_view(request: HttpRequest) -> JsonResponse:
 
 
 def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
-    """Возвращает детали конкретного лога по индексу.
-
-    Args:
-        request: HTTP-запрос.
-        index: Индекс лога в истории (0 — последний).
-
-    Returns:
-        JSON-ответ с полными данными лога и обнаруженными N+1 паттернами.
-    """
+    """Возвращает детали конкретного лога по индексу."""
     from ._serialization import detect_n_plus_one
 
-    storage = _get_storage()
+    storage = _get_storage_for_request(request)
     logs = storage.all()
     if index < 0 or index >= len(logs):
         return JsonResponse({"error": "Log not found"}, status=404)
@@ -116,34 +85,19 @@ def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
 
 @csrf_exempt
 def panel_clear_api_view(request: HttpRequest) -> JsonResponse:
-    """Очищает историю логов.
-
-    Args:
-        request: HTTP-запрос.
-
-    Returns:
-        JSON-ответ с подтверждением.
-    """
+    """Очищает историю логов."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
-    storage = _get_storage()
+    storage = _get_storage_for_request(request)
     storage.clear()
     return JsonResponse({"status": "cleared"})
 
 
 def panel_html_view(request: HttpRequest) -> HttpResponse:
-    """Отображает HTML-панель с историей логов (в стиле debug toolbar).
-
-    Args:
-        request: HTTP-запрос.
-
-    Returns:
-        HTML-ответ с визуализацией логов.
-    """
-    storage = _get_storage()
+    """Отображает HTML-панель с историей логов."""
+    storage = _get_storage_for_request(request)
     logs = storage.all()
-
     collector = _get_request_collector(request)
 
     context: dict[str, object] = {
@@ -153,19 +107,13 @@ def panel_html_view(request: HttpRequest) -> HttpResponse:
         "history": logs,
         "history_count": storage.count(),
         "aggregate": storage.aggregate_stats(),
+        "source_type": request.GET.get("source", "http"),
     }
     return render(request, "log_tools/panel.html", context)
 
 
-def _serialize_request_log(log: RequestLog) -> dict[str, object]:
-    """Сериализует ``RequestLog`` в словарь для JSON.
-
-    Args:
-        log: Лог запроса.
-
-    Returns:
-        Словарь с данными лога.
-    """
+def _serialize_request_log(log: Any) -> dict[str, object]:
+    """Сериализует ``RequestLog`` в словарь для JSON."""
     return {
         "method": log.method,
         "path": log.path,
@@ -174,28 +122,13 @@ def _serialize_request_log(log: RequestLog) -> dict[str, object]:
         "timestamp": log.timestamp,
         "summary": log.summary,
         "entries_count": len(log.entries),
+        "source": getattr(log, "source", "http"),
+        "command_name": getattr(log, "command_name", None),
     }
 
 
 def get_urls() -> list[URLPattern]:
-    """Возвращает URL-паттерны для панели логирования.
-
-    Включает:
-    - ``/log-tools/`` — HTML-панель с историей
-    - ``/log-tools/api/`` — текущий/последний лог (JSON)
-    - ``/log-tools/api/history/`` — история логов (JSON)
-    - ``/log-tools/api/<index>/`` — детали конкретного лога (JSON)
-    - ``/log-tools/api/clear/`` — очистка истории (POST)
-
-    Returns:
-        Список ``URLPattern`` для подключения в ``urlpatterns``.
-
-    Example:
-        urlpatterns = [
-            *log_tools.panel.get_urls(),
-            ...
-        ]
-    """
+    """Возвращает URL-паттерны для панели логирования."""
     return [
         path("log-tools/api/history/", panel_history_api_view, name="log_tools_history"),
         path("log-tools/api/clear/", panel_clear_api_view, name="log_tools_clear"),

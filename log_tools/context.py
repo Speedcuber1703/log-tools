@@ -41,7 +41,7 @@ class LogContext:
         slow_threshold_ms: Порог медленных операций.
     """
 
-    def __init__(self, name: str | None = None, slow_threshold_ms: float = DEFAULT_SLOW_THRESHOLD_MS) -> None:
+    def __init__(self, name: str | None = None, slow_threshold_ms: float = DEFAULT_SLOW_THRESHOLD_MS, source: str = "http", command_name: str | None = None) -> None:
         """Инициализирует контекст логирования.
 
         Args:
@@ -49,9 +49,13 @@ class LogContext:
                 (при декорировании — ``func.__qualname__``).
             slow_threshold_ms: Порог медленных операций в миллисекундах.
                 Наследуется от родительского коллектора, если не задан явно.
+            source: Источник логов (``"http"`` или ``"command"``).
+            command_name: Имя management-команды.
         """
         self.name: str | None = name
         self.slow_threshold_ms: float = slow_threshold_ms
+        self.source: str = source
+        self.command_name: str | None = command_name
         self._collector: Collector | None = None
 
     def __enter__(self) -> Collector:
@@ -66,7 +70,7 @@ class LogContext:
         slow = self.slow_threshold_ms
         if parent and slow == DEFAULT_SLOW_THRESHOLD_MS:
             slow = parent.slow_threshold_ms
-        self._collector = Collector(name=self.name, slow_threshold_ms=slow)
+        self._collector = Collector(name=self.name, slow_threshold_ms=slow, source=self.source, command_name=self.command_name)
         self._collector.start()
         return self._collector
 
@@ -79,7 +83,8 @@ class LogContext:
         """Деактивирует коллектор при выходе из контекста.
 
         Если есть родительский коллектор, все записи дочернего
-        переносятся в него, чтобы не потерять данные при сохранении.
+        переносятся в него. Если родителя нет и включено файловое
+        хранение — сохраняет лог в файл.
         """
         if self._collector:
             child = self._collector
@@ -88,6 +93,30 @@ class LogContext:
             if parent is not None and child is not parent:
                 for entry in child.entries:
                     parent.add(entry)
+            elif parent is None:
+                self._save_to_file(child)
+
+    def _save_to_file(self, collector: Collector) -> None:
+        """Сохраняет коллектор в файловое хранилище."""
+        from .settings import LOG_TOOLS
+        if not LOG_TOOLS.FILE_STORAGE:
+            return
+
+        from .file_storage import get_file_storage, RequestLog
+        from ._serialization import serialize_entry
+
+        storage = get_file_storage()
+        log = RequestLog(
+            method=collector.command_name or collector.name,
+            path=collector.name,
+            status_code=200,
+            elapsed_ms=collector.elapsed_ms(),
+            summary=collector.summary(),
+            entries=[serialize_entry(entry) for entry in collector.entries],
+            source=collector.source,
+            command_name=collector.command_name,
+        )
+        storage.add(log)
 
     def __call__(self, func: F) -> F:
         """Декорирует функцию, оборачивая её вызов в контекст логирования.

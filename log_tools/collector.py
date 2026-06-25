@@ -69,15 +69,19 @@ class Collector:
         {"name": "my-request", "elapsed_ms": 12.3, "sql_count": 1, ...}
     """
 
-    def __init__(self, name: str | None = None, slow_threshold_ms: float = 100) -> None:
+    def __init__(self, name: str | None = None, slow_threshold_ms: float = 100, source: str = "http", command_name: str | None = None) -> None:
         """Инициализирует коллектор.
 
         Args:
             name: Имя коллектора для идентификации в логах.
             slow_threshold_ms: Порог медленных операций в миллисекундах.
+            source: Источник логов (``"http"`` или ``"command"``).
+            command_name: Имя management-команды (если applicable).
         """
         self.name: str = name or "default"
         self.slow_threshold_ms: float = slow_threshold_ms
+        self.source: str = source
+        self.command_name: str | None = command_name
         self.entries: list[LogEntry] = []
         self._start_time: float = 0.0
 
