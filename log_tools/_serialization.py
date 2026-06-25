@@ -5,6 +5,17 @@ from typing import Any
 
 from .collector import LogEntry
 
+# Pre-compiled regex patterns for performance
+_RE_STRING = re.compile(r"'[^']*'")
+_RE_NUMBER = re.compile(r'\b\d+\.?\d*\b')
+_RE_PERCENT_S = re.compile(r'%s')
+_RE_PLACEHOLDER = re.compile(r'\?')
+_RE_WHITESPACE = re.compile(r'\s+')
+_RE_FROM_TABLE = re.compile(r'from\s+"?([a-z_]+)"?')
+_RE_WHERE_EQUALS = re.compile(r'where\s+.*=\s*\?')
+_RE_WHERE_CLAUSE = re.compile(r'WHERE.*')
+
+
 
 def serialize_entry(entry: LogEntry) -> dict[str, Any]:
     """Сериализует ``LogEntry`` в словарь для JSON и хранения.
@@ -74,8 +85,6 @@ def detect_n_plus_one(entries: list) -> list:
         Список словарей с информацией об обнаруженных N+1 паттернах:
         [{"table": "app_user", "count": 5, "total_ms": 12.3}]
     """
-    import re
-
     sql_entries = [e for e in entries if e.get("type") == "sql"]
     if len(sql_entries) < 2:
         return []
@@ -86,16 +95,16 @@ def detect_n_plus_one(entries: list) -> list:
         normalized = entry.get("data", {}).get("normalized_sql", "")
         duration = entry.get("duration_ms") or 0
 
-        table_match = re.search(r'from\s+"?([a-z_]+)"?', normalized)
+        table_match = _RE_FROM_TABLE.search(normalized)
         if not table_match:
             continue
         table = table_match.group(1)
 
-        where_match = re.search(r'where\s+.*=\s*\?', normalized)
+        where_match = _RE_WHERE_EQUALS.search(normalized)
         if not where_match:
             continue
 
-        base_query = re.sub(r'WHERE.*', 'WHERE ?', normalized)
+        base_query = _RE_WHERE_CLAUSE.sub("WHERE ?", normalized)
 
         if table not in patterns:
             patterns[table] = {}
@@ -140,17 +149,13 @@ def _substitute_params(sql: str, params: Any) -> str:
         return sql
 
     if isinstance(params, (list, tuple)):
-        # ? плейсхолдеры
-        if "?" in sql:
-            for value in params:
-                sql = sql.replace("?", _quote(value), 1)
-            return sql
-
-        # %s плейсхолдеры
-        if "%s" in sql:
-            for value in params:
-                sql = sql.replace("%s", _quote(value), 1)
-            return sql
+        values = [_quote(v) for v in params]
+        parts = sql.split("?", len(values))
+        if len(parts) > 1:
+            return "".join(p + v for p, v in zip(parts, values + [""] * (len(parts) - len(values))))[:-1]
+        parts = sql.split("%s", len(values))
+        if len(parts) > 1:
+            return "".join(p + v for p, v in zip(parts, values + [""] * (len(parts) - len(values))))[:-1]
 
     return sql
 

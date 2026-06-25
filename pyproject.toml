@@ -38,6 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 redis = ["redis>=4.0"]
+sql = ["sqlparse>=0.4"]
 dev = [
     "pytest",
     "pytest-django",
