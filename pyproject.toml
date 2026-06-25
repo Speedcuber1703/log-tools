@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "log-tools"
+version = "0.1.0"
+description = "Django library for logging execution time, SQL queries and Redis commands"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [
+    {name = "ponomarev"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Framework :: Django :: 3.2",
+    "Framework :: Django :: 4.0",
+    "Framework :: Django :: 4.1",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "django>=3.2",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=4.0"]
+dev = [
+    "pytest",
+    "pytest-django",
+    "build",
+]
+
+[project.urls]
+Homepage = "https://github.com/ponomarev/log-tools"
+Repository = "https://github.com/ponomarev/log-tools"
+Issues = "https://github.com/ponomarev/log-tools/issues"
+
+[tool.setuptools.packages.find]
+include = ["log_tools*"]
+
+[tool.setuptools.package-data]
+log_tools = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = ["."]
