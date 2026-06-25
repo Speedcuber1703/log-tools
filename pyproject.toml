@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.8"
 authors = [
-    {name = "ponomarev"},
+    {name = "Speedcuber1703"},
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -45,9 +45,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ponomarev/log-tools"
-Repository = "https://github.com/ponomarev/log-tools"
-Issues = "https://github.com/ponomarev/log-tools/issues"
+Homepage = "https://github.com/Speedcuber1703/log-tools"
+Repository = "https://github.com/Speedcuber1703/log-tools"
+Issues = "https://github.com/Speedcuber1703/log-tools/issues"
 
 [tool.setuptools.packages.find]
 include = ["log_tools*"]

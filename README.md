@@ -171,7 +171,7 @@ with LogContext("manual") as collector:
 
 ```bash
 # Клонировать и установить в dev mode
-git clone https://github.com/ponomarev/log-tools.git
+git clone https://github.com/Speedcuber1703/log-tools.git
 cd log-tools
 pip install -e ".[dev]"
 
