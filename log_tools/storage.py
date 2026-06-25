@@ -118,9 +118,9 @@ def get_storage() -> LogStorage:
     if _storage is None:
         with _storage_lock:
             if _storage is None:
-                from .settings import LOG_TOOLS_HISTORY_SIZE
+                from .settings import LOG_TOOLS
 
-                _storage = LogStorage(max_size=LOG_TOOLS_HISTORY_SIZE)
+                _storage = LogStorage(max_size=LOG_TOOLS.HISTORY_SIZE)
     return _storage
 
 

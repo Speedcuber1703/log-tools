@@ -4,6 +4,8 @@ from .context import LogContext
 from .collector import LogEntry, Collector, current_collector
 from .storage import get_storage, LogStorage, RequestLog
 
+from .settings import LOG_TOOLS
+
 __all__ = [
     "LogContext",
     "LogEntry",
@@ -12,4 +14,5 @@ __all__ = [
     "get_storage",
     "LogStorage",
     "RequestLog",
+    "LOG_TOOLS",
 ]

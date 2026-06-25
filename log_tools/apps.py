@@ -17,14 +17,14 @@ class LogToolsConfig(AppConfig):
 
         Применяет патчи для DB и Redis в соответствии с настройками.
         """
-        from .settings import LOG_TOOLS_PATCH_DB, LOG_TOOLS_PATCH_REDIS
+        from .settings import LOG_TOOLS
 
-        if LOG_TOOLS_PATCH_DB:
+        if LOG_TOOLS.PATCH_DB:
             from .db import patch_db
 
             patch_db()
 
-        if LOG_TOOLS_PATCH_REDIS:
+        if LOG_TOOLS.PATCH_REDIS:
             try:
                 from .redis import patch_redis
 

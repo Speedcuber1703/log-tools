@@ -13,8 +13,8 @@ from ._serialization import serialize_entry
 
 def __get_storage():
     """Возвращает активное хранилище (файловое или in-memory)."""
-    from .settings import LOG_TOOLS_FILE_STORAGE
-    if LOG_TOOLS_FILE_STORAGE:
+    from .settings import LOG_TOOLS
+    if LOG_TOOLS.FILE_STORAGE:
         return get_file_storage()
     return _get_storage()
 

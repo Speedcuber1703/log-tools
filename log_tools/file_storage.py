@@ -1,7 +1,7 @@
 """Файловое хранилище логов для персистентного хранения.
 
 Сохраняет логи в JSON-файл между перезапусками приложения.
-Подключается через настройку ``LOG_TOOLS_FILE_STORAGE = True``.
+Подключается через настройку ``LOG_TOOLS.FILE_STORAGE = True``.
 """
 from __future__ import annotations
 
@@ -191,12 +191,12 @@ def get_file_storage() -> FileLogStorage:
         with _file_storage_lock:
             if _file_storage is None:
                 from django.conf import settings
-                from .settings import LOG_TOOLS_HISTORY_SIZE
+                from .settings import LOG_TOOLS
 
                 base_dir = getattr(settings, "BASE_DIR", ".")
                 file_path = getattr(settings, "LOG_TOOLS_FILE_PATH", None)
                 if file_path is None:
                     file_path = os.path.join(str(base_dir), "log_tools_logs.jsonl")
 
-                _file_storage = FileLogStorage(file_path=file_path, max_size=LOG_TOOLS_HISTORY_SIZE)
+                _file_storage = FileLogStorage(file_path=file_path, max_size=LOG_TOOLS.HISTORY_SIZE)
     return _file_storage
