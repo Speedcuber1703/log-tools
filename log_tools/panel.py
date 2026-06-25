@@ -7,7 +7,16 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .collector import Collector, LogEntry, current_collector
 from .storage import get_storage, RequestLog
+from .file_storage import get_file_storage, RequestLog as FileRequestLog
 from ._serialization import serialize_entry
+
+
+def __get_storage():
+    """Возвращает активное хранилище (файловое или in-memory)."""
+    from .settings import LOG_TOOLS_FILE_STORAGE
+    if LOG_TOOLS_FILE_STORAGE:
+        return get_file_storage()
+    return _get_storage()
 
 
 def _get_request_collector(request: HttpRequest) -> Collector | None:
@@ -48,7 +57,7 @@ def panel_api_view(request: HttpRequest) -> JsonResponse:
         }
         return JsonResponse(data, json_dumps_params={"indent": 2})
 
-    storage = get_storage()
+    storage = _get_storage()
     logs = storage.all()
     if not logs:
         return JsonResponse({"error": "No logs available"}, status=404)
@@ -69,7 +78,7 @@ def panel_history_api_view(request: HttpRequest) -> JsonResponse:
     Returns:
         JSON-ответ со списком логов.
     """
-    storage = get_storage()
+    storage = _get_storage()
     limit = min(int(request.GET.get("limit", 50)), 200)
     logs = storage.all()[:limit]
     return JsonResponse({
@@ -90,7 +99,7 @@ def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
     """
     from ._serialization import detect_n_plus_one
 
-    storage = get_storage()
+    storage = _get_storage()
     logs = storage.all()
     if index < 0 or index >= len(logs):
         return JsonResponse({"error": "Log not found"}, status=404)
@@ -118,7 +127,7 @@ def panel_clear_api_view(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
-    storage = get_storage()
+    storage = _get_storage()
     storage.clear()
     return JsonResponse({"status": "cleared"})
 
@@ -132,7 +141,7 @@ def panel_html_view(request: HttpRequest) -> HttpResponse:
     Returns:
         HTML-ответ с визуализацией логов.
     """
-    storage = get_storage()
+    storage = _get_storage()
     logs = storage.all()
 
     collector = _get_request_collector(request)

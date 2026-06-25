@@ -32,3 +32,9 @@ LOG_TOOLS_ENABLE_PANEL: bool = get_setting("LOG_TOOLS_ENABLE_PANEL", True)
 
 LOG_TOOLS_HISTORY_SIZE: int = get_setting("LOG_TOOLS_HISTORY_SIZE", 100)
 """Максимальное количество хранимых логов в истории (кольцевой буфер)."""
+
+LOG_TOOLS_FILE_STORAGE: bool = get_setting("LOG_TOOLS_FILE_STORAGE", False)
+"""Использовать файл для хранения логов (персистентность между перезапусками)."""
+
+LOG_TOOLS_FILE_PATH: str | None = get_setting("LOG_TOOLS_FILE_PATH", None)
+"""Путь к файлу логов. По умолчанию: ``log_tools_logs.jsonl`` в ``BASE_DIR``."""
