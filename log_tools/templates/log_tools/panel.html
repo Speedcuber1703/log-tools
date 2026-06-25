@@ -350,40 +350,61 @@
       </div>
     </div>
 
-    {% if current_summary %}
+    {% if aggregate.total_requests > 0 %}
+    <h2>Общая статистика</h2>
     <div class="metrics">
-      <div class="metric {% if current_summary.elapsed_ms > 100 %}slow{% elif current_summary.elapsed_ms > 50 %}warn{% else %}ok{% endif %}">
-        <div class="icon">&#9201;</div>
-        <div class="label">Общее время</div>
-        <div class="value">{{ current_summary.elapsed_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
-        <div class="bar {% if current_summary.elapsed_ms > 100 %}danger{% elif current_summary.elapsed_ms > 50 %}warn{% endif %}" style="width: {% widthratio current_summary.elapsed_ms 200 100 %}%"></div>
+      <div class="metric ok">
+        <div class="icon">&#128202;</div>
+        <div class="label">Всего запросов</div>
+        <div class="value">{{ aggregate.total_requests }}</div>
       </div>
       <div class="metric">
         <div class="icon">&#128196;</div>
         <div class="label">SQL запросов</div>
-        <div class="value">{{ current_summary.sql_count }}</div>
-      </div>
-      <div class="metric {% if current_summary.sql_total_ms > 50 %}slow{% elif current_summary.sql_total_ms > 20 %}warn{% else %}ok{% endif %}">
-        <div class="icon">&#9889;</div>
-        <div class="label">SQL время</div>
-        <div class="value">{{ current_summary.sql_total_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
+        <div class="value">{{ aggregate.total_sql }}</div>
       </div>
       <div class="metric">
         <div class="icon">&#128268;</div>
-        <div class="label">Redis</div>
-        <div class="value">{{ current_summary.redis_count }}</div>
+        <div class="label">Redis команд</div>
+        <div class="value">{{ aggregate.total_redis }}</div>
       </div>
-      <div class="metric {% if current_summary.redis_total_ms > 50 %}slow{% elif current_summary.redis_total_ms > 20 %}warn{% else %}ok{% endif %}">
-        <div class="icon">&#9889;</div>
-        <div class="label">Redis время</div>
-        <div class="value">{{ current_summary.redis_total_ms|floatformat:1 }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
+      <div class="metric {% if aggregate.avg_elapsed_ms > 100 %}slow{% elif aggregate.avg_elapsed_ms > 50 %}warn{% else %}ok{% endif %}">
+        <div class="icon">&#9201;</div>
+        <div class="label">Среднее время</div>
+        <div class="value">{{ aggregate.avg_elapsed_ms }}<small style="font-size:11px;color:var(--text-muted)">ms</small></div>
       </div>
-      <div class="metric">
-        <div class="icon">&#128203;</div>
-        <div class="label">Записей</div>
-        <div class="value">{{ current_summary.total_entries }}</div>
+      <div class="metric {% if aggregate.duplicate_sql_count > 0 %}warn{% endif %}">
+        <div class="icon">&#128260;</div>
+        <div class="label">Дубли SQL</div>
+        <div class="value">{{ aggregate.duplicate_sql_count }}</div>
       </div>
     </div>
+
+    {% if aggregate.duplicates %}
+    <div style="margin-top: 12px; margin-bottom: 16px;">
+      <h2 style="margin-bottom: 8px;">Дублирующиеся SQL-запросы</h2>
+      <div class="table-wrapper">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>SQL запрос</th>
+              <th style="width:80px">Кол-во</th>
+              <th style="width:100px">Суммарное время</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for dup in aggregate.duplicates %}
+            <tr>
+              <td><div class="sql-block" style="font-size:11px;padding:6px 8px;margin:0;border:none">{{ dup.sql|truncatewords:30 }}</div></td>
+              <td><span class="slow-badge">{{ dup.count }}x</span></td>
+              <td><span class="time-text">{{ dup.total_ms }}ms</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
 
     <hr class="section-divider">
     {% endif %}

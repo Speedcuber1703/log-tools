@@ -113,3 +113,24 @@ def _quote(value: Any) -> str:
         return f"X'{value.hex()}'"
     escaped = str(value).replace("'", "''")
     return f"'{escaped}'"
+
+
+def normalize_sql(sql: str) -> str:
+    """Нормализует SQL-запрос для сравнения.
+
+    Заменяет параметры на плейсхолдеры, приводит к нижнему регистру,
+    убирает лишние пробелы. Используется для группировки дублирующихся запросов.
+
+    Args:
+        sql: Текст SQL-запроса.
+
+    Returns:
+        Нормализованный SQL-запрос.
+    """
+    normalized = sql
+    normalized = re.sub(r"'[^']*'", "?", normalized)
+    normalized = re.sub(r"\d+\.?\d*", "?", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalized.lower()
+    return normalized
+

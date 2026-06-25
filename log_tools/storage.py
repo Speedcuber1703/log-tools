@@ -92,6 +92,15 @@ class LogStorage:
         with self._lock:
             return len(self._logs)
 
+    def aggregate_stats(self) -> dict:
+        """Возвращает агрегатную статистику по всем сохранённым логам.
+
+        Returns:
+            Словарь с общими метриками и списком дублирующихся SQL-запросов.
+        """
+        logs = self.all()
+        return _compute_aggregate_stats(logs)
+
 
 _storage: LogStorage | None = None
 _storage_lock: threading.Lock = threading.Lock()
@@ -136,3 +145,56 @@ def save_collector(collector: Collector, status_code: int = 200) -> None:
         entries=[serialize_entry(entry) for entry in collector.entries],
     )
     storage.add(log)
+
+
+def _compute_aggregate_stats(logs: list) -> dict:
+    """Вычисляет агрегатную статистику по списку логов.
+
+    Args:
+        logs: Список ``RequestLog`` для анализа.
+
+    Returns:
+        Словарь с агрегатными метриками и дублирующимися SQL-запросами.
+    """
+    from ._serialization import normalize_sql
+
+    total_requests = len(logs)
+    total_sql = 0
+    total_redis = 0
+    total_elapsed_ms = 0.0
+    sql_texts: dict[str, dict] = {}
+
+    for log in logs:
+        total_sql += log.summary.get("sql_count", 0)
+        total_redis += log.summary.get("redis_count", 0)
+        total_elapsed_ms += log.elapsed_ms
+
+        for entry in log.entries:
+            if entry.get("type") == "sql":
+                raw_sql = entry["data"].get("sql", "")
+                normalized = normalize_sql(raw_sql)
+                if normalized not in sql_texts:
+                    sql_texts[normalized] = {"sql": raw_sql, "count": 0, "total_ms": 0.0}
+                sql_texts[normalized]["count"] += 1
+                sql_texts[normalized]["total_ms"] += entry.get("duration_ms") or 0
+
+    duplicates = [
+        {"sql": v["sql"], "count": v["count"], "total_ms": round(v["total_ms"], 2)}
+        for v in sql_texts.values()
+        if v["count"] > 1
+    ]
+    duplicates.sort(key=lambda x: x["count"], reverse=True)
+
+    unique_sql = len(sql_texts)
+    avg_elapsed = round(total_elapsed_ms / total_requests, 1) if total_requests else 0
+
+    return {
+        "total_requests": total_requests,
+        "total_sql": total_sql,
+        "total_redis": total_redis,
+        "total_elapsed_ms": round(total_elapsed_ms, 1),
+        "avg_elapsed_ms": avg_elapsed,
+        "unique_sql": unique_sql,
+        "duplicate_sql_count": len(duplicates),
+        "duplicates": duplicates,
+    }
