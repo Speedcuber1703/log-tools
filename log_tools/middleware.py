@@ -61,7 +61,7 @@ class LogToolsMiddleware:
         collector.add_timing(label="total", duration_ms=duration_ms)
         collector.finish()
 
-        if not request.path.startswith("/log-tools/"):
+        if not request.path.startswith("/log-tools/") and not request.path.startswith("/.well-known/"):
             save_collector(collector, status_code=response.status_code)
 
         summary = collector.summary()
