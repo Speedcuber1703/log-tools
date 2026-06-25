@@ -2,29 +2,25 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
-from django.conf import settings
 
 from log_tools.file_storage import get_file_storage
 from log_tools._serialization import detect_n_plus_one
-from log_tools import LogContext
 
 
 class Command(BaseCommand):
     """Показывает статистику логов, собранных библиотекой log-tools.
 
-    Автоматически включает файловое хранение и использует
-    LogContext для логирования выполнения команды.
+    Автоматически включает файловое хранение.
 
     Example:
         python manage.py log_tools_stats
         python manage.py log_tools_stats --limit 10
         python manage.py log_tools_stats --json
         python manage.py log_tools_stats --clear
-        python manage.py log_tools_stats --show-html
+        python manage.py log_tools_stats --html
     """
 
     help = "Показывает статистику логов log-tools"
@@ -54,9 +50,9 @@ class Command(BaseCommand):
             help="Порог медленных запросов в мс (по умолчанию 100)",
         )
         parser.add_argument(
-            "--show-html",
+            "--html",
             action="store_true",
-            help="Открыть HTML-панель в браузере после выполнения",
+            help="Создать standalone HTML-отчёт и открыть в браузере",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -69,8 +65,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("История логов очищена."))
             return
 
-        if options["show_html"]:
-            self._open_html_panel()
+        if options["html"]:
+            self._generate_html_report(storage)
             return
 
         logs = storage.all()
@@ -83,16 +79,18 @@ class Command(BaseCommand):
         else:
             self._output_text(logs, options)
 
-    def _open_html_panel(self) -> None:
-        """Открывает HTML-панель в браузере."""
-        import webbrowser
-        from django.contrib.sessions.backends.db import SessionStore
+    def _generate_html_report(self, storage: Any) -> None:
+        """Генерирует standalone HTML-отчёт и открывает в браузере."""
+        from log_tools.report import open_report
 
-        base_url = getattr(settings, "LOG_TOOLS_PANEL_URL", "http://localhost:8000/log-tools/")
-        file_url = f"{base_url}?source=file"
+        logs = storage.all()
+        if not logs:
+            self.stdout.write(self.style.WARNING("История логов пуста."))
+            return
 
-        self.stdout.write(self.style.HTTP_INFO(f"Открываю панель: {file_url}"))
-        webbrowser.open(file_url)
+        file_path = open_report(logs, title="Log Tools — Статистика")
+        self.stdout.write(self.style.SUCCESS(f"Отчёт создан: {file_path}"))
+        self.stdout.write(self.style.HTTP_INFO("Открываю в браузере..."))
 
     def _output_text(self, logs: list, options: dict) -> None:
         limit = options["limit"]
