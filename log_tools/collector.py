@@ -262,10 +262,10 @@ class Collector:
             "elapsed_ms": self.elapsed_ms(),
             "sql_count": len(sql),
             "sql_total_ms": total_sql_ms,
-            "sql_slow": [entry for entry in sql if entry.is_slow],
+            "sql_slow": [{"sql": e.data.get("sql", ""), "duration_ms": e.duration_ms, "params": e.data.get("params")} for e in sql if e.is_slow],
             "redis_count": len(redis),
             "redis_total_ms": total_redis_ms,
-            "redis_slow": [entry for entry in redis if entry.is_slow],
+            "redis_slow": [{"command": e.data.get("command", ""), "duration_ms": e.duration_ms} for e in redis if e.is_slow],
             "total_entries": len(self.entries),
         }
 

@@ -138,6 +138,7 @@ def panel_html_view(request: HttpRequest) -> HttpResponse:
         "current_entries": collector.entries if collector else [],
         "history": logs,
         "history_count": storage.count(),
+        "aggregate": storage.aggregate_stats(),
     }
     return render(request, "log_tools/panel.html", context)
 
