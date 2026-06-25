@@ -39,6 +39,22 @@ class LogToolsMiddleware:
         """
         self.get_response: Callable[[HttpRequest], HttpResponse] = get_response
 
+    def _save_to_file(self, collector: Any, status_code: int) -> None:
+        """Сохраняет коллектор в файловое хранилище."""
+        from ._serialization import serialize_entry
+        from .file_storage import FileLogStorage, RequestLog, get_file_storage
+
+        storage = get_file_storage()
+        log = RequestLog(
+            method=collector.name.split(" ")[0] if " " in collector.name else "",
+            path=collector.name.split(" ", 1)[1] if " " in collector.name else collector.name,
+            status_code=status_code,
+            elapsed_ms=collector.elapsed_ms(),
+            summary=collector.summary(),
+            entries=[serialize_entry(entry) for entry in collector.entries],
+        )
+        storage.add(log)
+
     def __call__(self, request: HttpRequest) -> HttpResponse:
         """Обрабатывает запрос: создаёт коллектор, проксирует вызов, логирует результат.
 
@@ -62,7 +78,11 @@ class LogToolsMiddleware:
         collector.finish()
 
         if not request.path.startswith("/log-tools/") and not request.path.startswith("/.well-known/"):
-            save_collector(collector, status_code=response.status_code)
+            from .settings import LOG_TOOLS_FILE_STORAGE
+            if LOG_TOOLS_FILE_STORAGE:
+                self._save_to_file(collector, response.status_code)
+            else:
+                save_collector(collector, status_code=response.status_code)
 
         summary = collector.summary()
         slow_threshold: float = getattr(request, "_log_tools_slow_threshold", 100)
