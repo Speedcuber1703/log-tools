@@ -78,8 +78,8 @@ class LogToolsMiddleware:
         collector.finish()
 
         if not request.path.startswith("/log-tools/") and not request.path.startswith("/.well-known/"):
-            from .settings import LOG_TOOLS_FILE_STORAGE
-            if LOG_TOOLS_FILE_STORAGE:
+            from .settings import LOG_TOOLS
+            if LOG_TOOLS.FILE_STORAGE:
                 self._save_to_file(collector, response.status_code)
             else:
                 save_collector(collector, status_code=response.status_code)

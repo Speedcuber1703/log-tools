@@ -1,40 +1,106 @@
+"""Ленивые настройки библиотеки log-tools.
+
+Все настройки читаются из ``django.conf.settings`` при обращении,
+а не при импорте модуля. Это позволяет переопределять их
+в ``settings.py`` проекта без проблем с порядком импорта.
+"""
 from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
+from django.conf import settings as _django_settings
 
 
-def get_setting(name: str, default: Any = None) -> Any:
-    """Читает настройку из ``django.conf.settings``.
+class _Settings:
+    """Ленивый прокси для чтения настроек из ``django.conf.settings``.
 
-    Args:
-        name: Имя настройки.
-        default: Значение по умолчанию, если настройка не задана.
+    Каждое обращение к атрибуту читает значение из Django settings
+    в реальном времени, что позволяет переопределять настройки
+    в ``settings.py`` проекта.
 
-    Returns:
-        Значение настройки или ``default``.
+    Example:
+        В ``settings.py`` проекта::
+
+            LOG_TOOLS_SLOW_THRESHOLD_MS = 50
+            LOG_TOOLS_FILE_STORAGE = True
+
+        В коде::
+
+            from log_tools.settings import LOG_TOOLS
+
+            threshold = LOG_TOOLS.SLOW_THRESHOLD_MS  # 50
     """
-    return getattr(settings, name, default)
+
+    def _get(self, name: str, default: Any = None) -> Any:
+        """Читает настройку из ``django.conf.settings``.
+
+        Args:
+            name: Имя настройки (без префикса ``LOG_TOOLS_``).
+            default: Значение по умолчанию.
+
+        Returns:
+            Значение настройки или ``default``.
+        """
+        full_name = f"LOG_TOOLS_{name}"
+        return getattr(_django_settings, full_name, default)
+
+    @property
+    def SLOW_THRESHOLD_MS(self) -> float:
+        """Порог медленных операций в миллисекундах.
+
+        Операции дольше этого порога считаются медленными.
+        По умолчанию: 100 мс.
+        """
+        return self._get("SLOW_THRESHOLD_MS", 100)
+
+    @property
+    def PATCH_DB(self) -> bool:
+        """Автоматически патчить ``CursorWrapper`` для логирования SQL-запросов.
+
+        По умолчанию: ``True``.
+        """
+        return self._get("PATCH_DB", True)
+
+    @property
+    def PATCH_REDIS(self) -> bool:
+        """Автоматически патчить ``redis.Redis`` для логирования команд.
+
+        По умолчанию: ``True``.
+        """
+        return self._get("PATCH_REDIS", True)
+
+    @property
+    def ENABLE_PANEL(self) -> bool:
+        """Включить HTML-панель для просмотра логов.
+
+        По умолчанию: ``True``.
+        """
+        return self._get("ENABLE_PANEL", True)
+
+    @property
+    def HISTORY_SIZE(self) -> int:
+        """Максимальное количество хранимых логов в истории.
+
+        По умолчанию: 100.
+        """
+        return self._get("HISTORY_SIZE", 100)
+
+    @property
+    def FILE_STORAGE(self) -> bool:
+        """Использовать файл для хранения логов.
+
+        Включает персистентность между перезапусками.
+        По умолчанию: ``False``.
+        """
+        return self._get("FILE_STORAGE", False)
+
+    @property
+    def FILE_PATH(self) -> str | None:
+        """Путь к файлу логов.
+
+        По умолчанию: ``None`` (используется ``log_tools_logs.jsonl`` в ``BASE_DIR``).
+        """
+        return self._get("FILE_PATH", None)
 
 
-LOG_TOOLS_SLOW_THRESHOLD_MS: float = get_setting("LOG_TOOLS_SLOW_THRESHOLD_MS", 100)
-"""Порог медленных операций в миллисекундах. Операции дольше этого порога считаются медленными."""
-
-LOG_TOOLS_PATCH_DB: bool = get_setting("LOG_TOOLS_PATCH_DB", True)
-"""Автоматически патчить ``CursorWrapper`` для логирования SQL-запросов."""
-
-LOG_TOOLS_PATCH_REDIS: bool = get_setting("LOG_TOOLS_PATCH_REDIS", True)
-"""Автоматически патчить ``redis.Redis`` для логирования команд."""
-
-LOG_TOOLS_ENABLE_PANEL: bool = get_setting("LOG_TOOLS_ENABLE_PANEL", True)
-"""Включить HTML-панель для просмотра логов."""
-
-LOG_TOOLS_HISTORY_SIZE: int = get_setting("LOG_TOOLS_HISTORY_SIZE", 100)
-"""Максимальное количество хранимых логов в истории (кольцевой буфер)."""
-
-LOG_TOOLS_FILE_STORAGE: bool = get_setting("LOG_TOOLS_FILE_STORAGE", False)
-"""Использовать файл для хранения логов (персистентность между перезапусками)."""
-
-LOG_TOOLS_FILE_PATH: str | None = get_setting("LOG_TOOLS_FILE_PATH", None)
-"""Путь к файлу логов. По умолчанию: ``log_tools_logs.jsonl`` в ``BASE_DIR``."""
+LOG_TOOLS = _Settings()
