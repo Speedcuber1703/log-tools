@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Log Tools</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, monospace; background: #0f1117; color: #e1e4e8; padding: 16px; }
+  h1 { font-size: 18px; margin-bottom: 12px; color: #58a6ff; }
+  h2 { font-size: 14px; margin: 16px 0 8px; color: #8b949e; }
+
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; }
+  .card .label { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+  .card .value { font-size: 20px; font-weight: bold; margin-top: 4px; }
+  .card .value.slow { color: #f85149; }
+  .card .value.ok { color: #3fb950; }
+
+  .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .history-table th { text-align: left; padding: 8px; color: #8b949e; border-bottom: 1px solid #30363d; font-size: 11px; text-transform: uppercase; }
+  .history-table td { padding: 8px; border-bottom: 1px solid #21262d; }
+  .history-table tr:hover { background: #161b22; cursor: pointer; }
+  .method { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+  .method.GET { background: #23863620; color: #3fb950; }
+  .method.POST { background: #388bfd20; color: #58a6ff; }
+  .method.PUT { background: #d2992220; color: #d29922; }
+  .method.DELETE { background: #f8514920; color: #f85149; }
+  .status { font-weight: bold; }
+  .status.s2xx { color: #3fb950; }
+  .status.s3xx { color: #58a6ff; }
+  .status.s4xx { color: #d29922; }
+  .status.s5xx { color: #f85149; }
+  .dur { color: #8b949e; }
+  .dur.slow { color: #f85149; font-weight: bold; }
+
+  .detail-panel { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; margin-top: 12px; }
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .detail-header h3 { font-size: 14px; color: #58a6ff; }
+  .close-btn { background: #30363d; border: none; color: #e1e4e8; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .close-btn:hover { background: #3d444d; }
+
+  .entries { display: flex; flex-direction: column; gap: 4px; }
+  .entry { background: #0d1117; border-radius: 4px; padding: 8px 12px; font-size: 13px; border-left: 3px solid #30363d; }
+  .entry.sql { border-left-color: #58a6ff; }
+  .entry.redis { border-left-color: #d29922; }
+  .entry.timing { border-left-color: #3fb950; }
+  .entry.slow { border-left-color: #f85149; }
+  .entry .type { font-weight: bold; margin-right: 8px; }
+  .entry .type.sql { color: #58a6ff; }
+  .entry .type.redis { color: #d29922; }
+  .entry .type.timing { color: #3fb950; }
+  .entry .dur { color: #8b949e; float: right; }
+  .entry .dur.slow { color: #f85149; font-weight: bold; }
+  .sql-text { color: #c9d1d9; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin-top: 4px; background: #161b22; padding: 8px; border-radius: 4px; border: 1px solid #21262d; }
+  .redis-cmd { color: #d29922; font-family: monospace; margin-top: 4px; }
+
+  .empty { color: #8b949e; padding: 24px; text-align: center; }
+  .clear-btn { background: #f8514920; border: 1px solid #f8514940; color: #f85149; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .clear-btn:hover { background: #f8514940; }
+</style>
+</head>
+<body>
+
+<h1>Log Tools</h1>
+
+{% if current_summary %}
+<h2>Текущий запрос</h2>
+<div class="summary">
+  <div class="card">
+    <div class="label">Время</div>
+    <div class="value {% if current_summary.elapsed_ms > 100 %}slow{% else %}ok{% endif %}">{{ current_summary.elapsed_ms|floatformat:1 }}ms</div>
+  </div>
+  <div class="card">
+    <div class="label">SQL</div>
+    <div class="value">{{ current_summary.sql_count }}</div>
+  </div>
+  <div class="card">
+    <div class="label">SQL время</div>
+    <div class="value {% if current_summary.sql_total_ms > 50 %}slow{% else %}ok{% endif %}">{{ current_summary.sql_total_ms|floatformat:1 }}ms</div>
+  </div>
+  <div class="card">
+    <div class="label">Redis</div>
+    <div class="value">{{ current_summary.redis_count }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Redis время</div>
+    <div class="value {% if current_summary.redis_total_ms > 50 %}slow{% else %}ok{% endif %}">{{ current_summary.redis_total_ms|floatformat:1 }}ms</div>
+  </div>
+  <div class="card">
+    <div class="label">Записей</div>
+    <div class="value">{{ current_summary.total_entries }}</div>
+  </div>
+</div>
+
+<div class="entries">
+{% for entry in current_entries %}
+  <div class="entry {{ entry.type }} {% if entry.is_slow %}slow{% endif %}">
+    <span class="type {{ entry.type }}">{{ entry.type|upper }}</span>
+    {% if entry.duration_ms is not None %}
+      <span class="dur {% if entry.is_slow %}slow{% endif %}">{{ entry.duration_ms|floatformat:2 }}ms</span>
+    {% endif %}
+    {% if entry.type == "sql" %}
+      <div class="sql-text">{{ entry.data.sql }}</div>
+    {% elif entry.type == "redis" %}
+      <div class="redis-cmd">{{ entry.data.command }} {{ entry.data.args }}</div>
+    {% elif entry.type == "timing" %}
+      <span>{{ entry.data.label }}</span>
+    {% elif entry.type == "log" %}
+      <span>{{ entry.data.message }}</span>
+    {% endif %}
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
+<h2>
+  История запросов ({{ history_count }})
+  {% if history_count > 0 %}
+    <button class="clear-btn" onclick="clearHistory()" style="margin-left: 12px; vertical-align: middle;">Очистить</button>
+  {% endif %}
+</h2>
+
+<div id="detail-container"></div>
+
+{% if history %}
+<table class="history-table">
+  <thead>
+    <tr>
+      <th>Метод</th>
+      <th>Путь</th>
+      <th>Статус</th>
+      <th>Время</th>
+      <th>SQL</th>
+      <th>Redis</th>
+      <th>Записей</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for log in history %}
+    <tr onclick="showDetail({{ forloop.counter0 }})">
+      <td><span class="method {{ log.method }}">{{ log.method }}</span></td>
+      <td>{{ log.path }}</td>
+      <td><span class="status {% if log.status_code < 300 %}s2xx{% elif log.status_code < 400 %}s3xx{% elif log.status_code < 500 %}s4xx{% else %}s5xx{% endif %}">{{ log.status_code }}</span></td>
+      <td><span class="dur {% if log.elapsed_ms > 100 %}slow{% endif %}">{{ log.elapsed_ms|floatformat:1 }}ms</span></td>
+      <td>{{ log.summary.sql_count }}</td>
+      <td>{{ log.summary.redis_count }}</td>
+      <td>{{ log.summary.total_entries }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <div class="empty">Пока нет сохранённых логов. Выполните запрос к приложению.</div>
+{% endif %}
+
+<script>
+function showDetail(index) {
+  fetch('/log-tools/api/' + index + '/')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('detail-container');
+      const log = data.log;
+      let html = '<div class="detail-panel">';
+      html += '<div class="detail-header"><h3>' + log.method + ' ' + log.path + ' (' + log.status_code + ')</h3>';
+      html += '<button class="close-btn" onclick="document.getElementById(\'detail-container\').innerHTML=\'\'">Закрыть</button></div>';
+
+      html += '<div class="summary">';
+      html += '<div class="card"><div class="label">Время</div><div class="value">' + log.elapsed_ms.toFixed(1) + 'ms</div></div>';
+      html += '<div class="card"><div class="label">SQL</div><div class="value">' + log.summary.sql_count + '</div></div>';
+      html += '<div class="card"><div class="label">SQL время</div><div class="value">' + log.summary.sql_total_ms.toFixed(1) + 'ms</div></div>';
+      html += '<div class="card"><div class="label">Redis</div><div class="value">' + log.summary.redis_count + '</div></div>';
+      html += '<div class="card"><div class="label">Redis время</div><div class="value">' + log.summary.redis_total_ms.toFixed(1) + 'ms</div></div>';
+      html += '</div>';
+
+      html += '<div class="entries">';
+      data.entries.forEach(e => {
+        const slowClass = e.is_slow ? ' slow' : '';
+        html += '<div class="entry ' + e.type + slowClass + '">';
+        html += '<span class="type ' + e.type + '">' + e.type.toUpperCase() + '</span>';
+        if (e.duration_ms !== null) {
+          html += '<span class="dur' + slowClass + '">' + e.duration_ms.toFixed(2) + 'ms</span>';
+        }
+        if (e.type === 'sql') {
+          html += '<div class="sql-text">' + escapeHtml(e.data.sql) + '</div>';
+        } else if (e.type === 'redis') {
+          html += '<div class="redis-cmd">' + e.data.command + ' ' + JSON.stringify(e.data.args) + '</div>';
+        } else if (e.type === 'timing') {
+          html += '<span>' + e.data.label + '</span>';
+        } else if (e.type === 'log') {
+          html += '<span>' + e.data.message + '</span>';
+        }
+        html += '</div>';
+      });
+      html += '</div></div>';
+      container.innerHTML = html;
+    });
+}
+
+function clearHistory() {
+  fetch('/log-tools/api/clear/', {
+    method: 'POST',
+    headers: {'X-Requested-With': 'XMLHttpRequest'}
+  }).then(() => location.reload());
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
