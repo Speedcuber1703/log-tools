@@ -362,7 +362,8 @@
 <div class="layout">
   <div class="main-panel">
     <div class="page-header">
-      <h1>Log Tools</h1>
+      <h1>{% if title %}{{ title }}{% else %}Log Tools{% endif %}</h1>
+      {% if not standalone %}
       <div style="display:flex;gap:8px;align-items:center">
         <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">
           <a href="/" class="btn {% if source_type != 'file' %}btn-active{% endif %}" style="border:none;border-radius:0;text-decoration:none">HTTP</a>
@@ -372,6 +373,7 @@
           <button class="btn btn-danger" onclick="clearHistory()">Очистить</button>
         {% endif %}
       </div>
+      {% endif %}
     </div>
 
     
@@ -427,6 +429,19 @@
 </div>
 
 <script>
+{% if standalone %}
+const STANDALONE_LOGS = {{% for log in history %}{
+  "method": "{{ log.method }}",
+  "path": "{{ log.path }}",
+  "status_code": {{ log.status_code }},
+  "elapsed_ms": {{ log.elapsed_ms|floatformat:2 }},
+  "timestamp": {{ log.timestamp }},
+  "summary": {{ log.summary|safe }},
+  "entries": {{ log.entries|safe }},
+  "source": "{{ log.source|default:'http' }}",
+  "command_name": "{{ log.command_name|default:'' }}"
+}{% if not forloop.last %},{% endif %}{% endfor %}};
+{% endif %}
 let currentIndex = -1;
 
 function showDetail(index, row) {
@@ -436,10 +451,18 @@ function showDetail(index, row) {
   document.querySelectorAll('.history-table tbody tr').forEach(r => r.classList.remove('selected'));
   if (row) row.classList.add('selected');
 
+  {% if standalone %}
+  const data = { log: STANDALONE_LOGS[index], entries: STANDALONE_LOGS[index].entries, n_plus_one: [] };
+  renderDetail(data);
+  {% else %}
   const params = new URLSearchParams(window.location.search);
   fetch('/log-tools/api/' + index + '/' + (params.toString() ? '?' + params : ''))
     .then(r => r.json())
-    .then(data => {
+    .then(data => renderDetail(data));
+  {% endif %}
+}
+
+function renderDetail(data) {
       const log = data.log;
       document.getElementById('sidebar-title').textContent = log.method + ' ' + log.path;
 
