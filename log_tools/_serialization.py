@@ -13,7 +13,7 @@ _RE_PLACEHOLDER = re.compile(r'\?')
 _RE_WHITESPACE = re.compile(r'\s+')
 _RE_FROM_TABLE = re.compile(r'from\s+"?([a-z_]+)"?')
 _RE_WHERE_EQUALS = re.compile(r'where\s+.*=\s*\?')
-_RE_WHERE_CLAUSE = re.compile(r'WHERE.*')
+_RE_WHERE_CLAUSE = re.compile(r'where.*')
 
 
 
@@ -104,7 +104,7 @@ def detect_n_plus_one(entries: list) -> list:
         if not where_match:
             continue
 
-        base_query = _RE_WHERE_CLAUSE.sub("WHERE ?", normalized)
+        base_query = _RE_WHERE_CLAUSE.sub("where ?", normalized)
 
         if table not in patterns:
             patterns[table] = {}
@@ -150,12 +150,18 @@ def _substitute_params(sql: str, params: Any) -> str:
 
     if isinstance(params, (list, tuple)):
         values = [_quote(v) for v in params]
-        parts = sql.split("?", len(values))
-        if len(parts) > 1:
-            return "".join(p + v for p, v in zip(parts, values + [""] * (len(parts) - len(values))))[:-1]
-        parts = sql.split("%s", len(values))
-        if len(parts) > 1:
-            return "".join(p + v for p, v in zip(parts, values + [""] * (len(parts) - len(values))))[:-1]
+        placeholder = "?" if "?" in sql else "%s"
+        # Разбиваем исходный SQL по плейсхолдеру, чтобы символы плейсхолдера
+        # внутри закавыченных значений нельзя было принять за настоящие.
+        parts = sql.split(placeholder)
+        result = [parts[0]]
+        for i, part in enumerate(parts[1:]):
+            if i < len(values):
+                result.append(values[i])
+            else:
+                result.append(placeholder)  # плейсхолдеров больше, чем параметров
+            result.append(part)
+        return "".join(result)
 
     return sql
 
@@ -194,11 +200,11 @@ def normalize_sql(sql: str) -> str:
         Нормализованный SQL-запрос.
     """
     normalized = sql
-    normalized = re.sub(r"'[^']*'", "?", normalized)
-    normalized = re.sub(r"\d+\.?\d*", "?", normalized)
-    normalized = re.sub(r"%s", "?", normalized)
-    normalized = re.sub(r"\?", "?", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _RE_STRING.sub("?", normalized)
+    normalized = _RE_NUMBER.sub("?", normalized)
+    normalized = _RE_PERCENT_S.sub("?", normalized)
+    normalized = _RE_PLACEHOLDER.sub("?", normalized)
+    normalized = _RE_WHITESPACE.sub(" ", normalized).strip()
     normalized = normalized.lower()
     return normalized
 
