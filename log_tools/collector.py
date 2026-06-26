@@ -84,6 +84,7 @@ class Collector:
         self.command_name: str | None = command_name
         self.entries: list[LogEntry] = []
         self._start_time: float = 0.0
+        self._prev: Collector | None = None
 
     def __enter__(self) -> Collector:
         """Активирует коллектор при входе в контекст."""
@@ -106,21 +107,17 @@ class Collector:
         для корректного восстановления при завершении.
         """
         self._start_time = time.monotonic()
-        token = _collector_var.collector if hasattr(_collector_var, "collector") else None
+        self._prev = getattr(_collector_var, "collector", None)
         _collector_var.collector = self
-        _collector_var._prev = token
 
     def finish(self) -> None:
         """Деактивирует коллектор и восстанавливает предыдущий.
 
         Вызывается автоматически при выходе из контекста или вручную.
         """
-        prev = getattr(_collector_var, "_prev", None)
-        if prev is not None:
-            _collector_var.collector = prev
-            _collector_var._prev = getattr(prev, "_prev", None)
-        elif hasattr(_collector_var, "collector"):
-            del _collector_var.collector
+        if getattr(_collector_var, "collector", None) is self:
+            _collector_var.collector = self._prev
+        self._prev = None
 
     def elapsed_ms(self) -> float:
         """Возвращает время работы коллектора в миллисекундах с момента ``start()``.

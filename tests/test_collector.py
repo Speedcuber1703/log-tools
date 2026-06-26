@@ -63,6 +63,21 @@ class TestCollector:
         first.finish()
         assert current_collector() is None
 
+    def test_three_level_nesting(self):
+        a = Collector("a")
+        b = Collector("b")
+        c = Collector("c")
+        a.start()
+        b.start()
+        c.start()
+        assert current_collector() is c
+        c.finish()
+        assert current_collector() is b
+        b.finish()
+        assert current_collector() is a
+        a.finish()
+        assert current_collector() is None
+
 
 class TestLogContext:
     def test_basic_context(self):
@@ -109,6 +124,22 @@ class TestLogContext:
         with LogContext("parent") as parent:
             with LogContext("child") as child:
                 assert child.slow_threshold_ms == parent.slow_threshold_ms
+
+    def test_three_level_context_propagation(self):
+        with LogContext("outer") as outer:
+            outer.add_sql("q_outer")
+            with LogContext("middle") as middle:
+                middle.add_sql("q_middle")
+                with LogContext("inner") as inner:
+                    inner.add_sql("q_inner")
+                    assert current_collector() is inner
+                assert current_collector() is middle
+            assert current_collector() is outer
+        assert current_collector() is None
+
+        # записи всплывают к ближайшему родителю при выходе с каждого уровня
+        outer_sql = [e.data["sql"] for e in outer.sql_entries()]
+        assert outer_sql == ["q_outer", "q_middle", "q_inner"]
 
 
 class TestDecorator:
