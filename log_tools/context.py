@@ -16,9 +16,6 @@ from .collector import Collector, Source, current_collector
 
 F = TypeVar('F', bound=Callable[..., Any])
 
-DEFAULT_SLOW_THRESHOLD_MS: float = 1000
-
-
 class LogContext:
     """Контекстный менеджер для логирования блоков кода.
 
@@ -48,10 +45,12 @@ class LogContext:
                 ...
     """
 
+    _UNSET: float = -1
+
     def __init__(
         self,
         name: str | None = None,
-        slow_threshold_ms: float = DEFAULT_SLOW_THRESHOLD_MS,
+        slow_threshold_ms: float = _UNSET,
         source: Source = Source.HTTP,
         command_name: str | None = None,
     ) -> None:
@@ -61,12 +60,18 @@ class LogContext:
             name: Имя контекста. Если не указано, используется ``None``
                 (при декорировании — ``func.__qualname__``).
             slow_threshold_ms: Порог медленных операций в миллисекундах.
+                По умолчанию берётся из ``LOG_TOOLS_SLOW_THRESHOLD_MS``.
                 Наследуется от родительского коллектора, если не задан явно.
             source: Источник логов (HTTP или COMMAND).
             command_name: Имя management-команды.
         """
+        from .settings import LOG_TOOLS
+
         self.name: str | None = name
-        self.slow_threshold_ms: float = slow_threshold_ms
+        if slow_threshold_ms == self._UNSET:
+            self.slow_threshold_ms: float = LOG_TOOLS.SLOW_THRESHOLD_MS
+        else:
+            self.slow_threshold_ms = slow_threshold_ms
         self.source: Source = Source(source) if isinstance(source, str) else source
         self.command_name: str | None = command_name
         self._collector: Collector | None = None
@@ -79,9 +84,10 @@ class LogContext:
         Returns:
             Созданный ``Collector``.
         """
+        from .settings import LOG_TOOLS
         parent = current_collector()
         slow = self.slow_threshold_ms
-        if parent and slow == DEFAULT_SLOW_THRESHOLD_MS:
+        if parent and slow == LOG_TOOLS.SLOW_THRESHOLD_MS:
             slow = parent.slow_threshold_ms
         self._collector = Collector(
             name=self.name,
