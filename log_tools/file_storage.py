@@ -24,6 +24,8 @@ class RequestLog:
     timestamp: float = field(default_factory=time.time)
     summary: dict[str, Any] = field(default_factory=dict)
     entries: list[dict[str, Any]] = field(default_factory=list)
+    source: str = "http"
+    command_name: str | None = None
 
 
 class FileLogStorage:
@@ -58,6 +60,8 @@ class FileLogStorage:
                     "timestamp": log.timestamp,
                     "summary": log.summary,
                     "entries": log.entries,
+                    "source": log.source,
+                    "command_name": log.command_name,
                 }
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -116,6 +120,8 @@ class FileLogStorage:
                 timestamp=r.get("timestamp", 0),
                 summary=r.get("summary", {}),
                 entries=r.get("entries", []),
+                source=r.get("source", "http"),
+                command_name=r.get("command_name"),
             )
             for r in records
         ]
