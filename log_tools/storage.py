@@ -23,10 +23,10 @@ class RequestLog:
         path: Путь запроса.
         status_code: HTTP-статус.
         elapsed_ms: Время выполнения в миллисекундах.
-        timestamp: Unix-таймстемп.
+        timestamp: Unix-таймстемп создания.
         summary: Сводка из ``Collector.summary()``.
-        entries: Список сериализованных записей.
-        source: Источник логов.
+        entries: Список сериализованных записей лога.
+        source: Источник логов (HTTP или COMMAND).
         command_name: Имя management-команды.
     """
 
@@ -45,12 +45,24 @@ class LogStorage:
     """In-memory хранилище логов (кольцевой буфер).
 
     Потокобезопасно через ``threading.Lock``.
+    При заполнении самый старый лог удаляется автоматически.
 
     Attributes:
         max_size: Максимальное количество хранимых логов.
+
+    Example:
+        >>> storage = LogStorage(max_size=100)
+        >>> storage.add(RequestLog(...))
+        >>> storage.all()
+        [RequestLog(...), ...]
     """
 
     def __init__(self, max_size: int = 100) -> None:
+        """Инициализирует хранилище.
+
+        Args:
+            max_size: Максимальное количество логов.
+        """
         self.max_size: int = max_size
         self._logs: deque[RequestLog] = deque(maxlen=max_size)
         self._lock: threading.Lock = threading.Lock()
@@ -71,7 +83,7 @@ class LogStorage:
             limit: Максимальное количество. ``None`` — все.
 
         Returns:
-            Список логов (новые первые).
+            Список логов, отсортированных по времени (новые первые).
         """
         with self._lock:
             logs = list(reversed(self._logs))
@@ -80,17 +92,28 @@ class LogStorage:
         return logs
 
     def clear(self) -> None:
-        """Очищает историю логов."""
+        """Очищает всю историю логов."""
         with self._lock:
             self._logs.clear()
 
     def count(self) -> int:
-        """Возвращает количество логов."""
+        """Возвращает количество сохранённых логов.
+
+        Returns:
+            Количество логов.
+        """
         with self._lock:
             return len(self._logs)
 
     def aggregate_stats(self) -> dict[str, Any]:
-        """Возвращает агрегатную статистику по всем логам."""
+        """Возвращает агрегатную статистику по всем логам.
+
+        Считает общее количество запросов, SQL, Redis,
+        среднее время и дублирующиеся SQL-запросы.
+
+        Returns:
+            Словарь с агрегатными метриками.
+        """
         from ._serialization import normalize_sql
 
         logs = self.all()
@@ -141,7 +164,11 @@ _storage_lock: threading.Lock = threading.Lock()
 
 
 def get_storage() -> LogStorage:
-    """Возвращает глобальный экземпляр ``LogStorage`` (синглтон)."""
+    """Возвращает глобальный экземпляр ``LogStorage`` (синглтон).
+
+    Returns:
+        Экземпляр ``LogStorage``.
+    """
     global _storage
     if _storage is None:
         with _storage_lock:
@@ -154,8 +181,10 @@ def get_storage() -> LogStorage:
 def save_collector(collector: Any, status_code: int = 200) -> None:
     """Сохраняет завершённый коллектор в историю логов.
 
+    Вызывается из middleware после завершения обработки запроса.
+
     Args:
-        collector: Завершённый коллектор.
+        collector: Завершённый коллектор с записями.
         status_code: HTTP-код ответа.
     """
     from ._serialization import serialize_entry

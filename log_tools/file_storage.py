@@ -2,6 +2,9 @@
 
 Сохраняет логи в JSONL-файл между перезапусками приложения.
 Подключается через настройку ``LOG_TOOLS_FILE_STORAGE = True``.
+
+Формат файла — JSONL (одна JSON-запись на строку), что позволяет
+эффективно дозаписывать новые логи без перезаписи всего файла.
 """
 from __future__ import annotations
 
@@ -49,19 +52,35 @@ class FileLogStorage:
     """Файловое хранилище логов в формате JSONL.
 
     Потокобезопасно для записи через ``threading.Lock``.
+    Автоматически обрезает файл при превышении ``max_size``.
 
     Attributes:
         file_path: Путь к файлу логов.
         max_size: Максимальное количество хранимых логов.
+
+    Example:
+        >>> storage = FileLogStorage("/var/log/app_logs.jsonl")
+        >>> storage.add(RequestLog(method="GET", path="/api/", ...))
+        >>> storage.all()
+        [RequestLog(...), ...]
     """
 
     def __init__(self, file_path: str, max_size: int = 500) -> None:
+        """Инициализирует хранилище.
+
+        Args:
+            file_path: Путь к JSONL-файлу.
+            max_size: Максимальное количество логов.
+        """
         self.file_path: str = file_path
         self.max_size: int = max_size
         self._lock: threading.Lock = threading.Lock()
 
     def add(self, log: RequestLog) -> None:
         """Сохраняет лог запроса в файл.
+
+        Дозаписывает одну JSON-строку в конец файла.
+        Если количество записей превышает ``max_size``, обрезает файл.
 
         Args:
             log: Лог запроса для сохранения.
@@ -85,7 +104,10 @@ class FileLogStorage:
             self._truncate_if_needed()
 
     def _truncate_if_needed(self) -> None:
-        """Обрезает файл, оставляя последние ``max_size`` записей."""
+        """Обрезает файл, оставляя последние ``max_size`` записей.
+
+        Читает все записи, перезаписывает файл с последними записями.
+        """
         logs = self._read_all()
         if len(logs) > self.max_size:
             logs = logs[-self.max_size:]
@@ -95,6 +117,8 @@ class FileLogStorage:
 
     def _read_all(self) -> list[dict[str, Any]]:
         """Читает все записи из файла.
+
+        Пропускает повреждённые строки с логированием.
 
         Returns:
             Список словарей с данными логов.
@@ -151,14 +175,27 @@ class FileLogStorage:
                 os.remove(self.file_path)
 
     def count(self) -> int:
-        """Возвращает количество сохранённых логов."""
+        """Возвращает количество сохранённых логов.
+
+        Считает непустые строки в файле без полного парсинга.
+
+        Returns:
+            Количество логов.
+        """
         if not os.path.exists(self.file_path):
             return 0
         with open(self.file_path, "r", encoding="utf-8") as f:
             return sum(1 for line in f if line.strip())
 
     def aggregate_stats(self) -> dict[str, Any]:
-        """Возвращает агрегатную статистику по всем логам."""
+        """Возвращает агрегатную статистику по всем логам.
+
+        Считает общее количество запросов, SQL, Redis,
+        среднее время и дублирующиеся SQL-запросы.
+
+        Returns:
+            Словарь с агрегатными метриками.
+        """
         from ._serialization import normalize_sql
 
         logs = self.all()
@@ -209,7 +246,14 @@ _file_storage_lock: threading.Lock = threading.Lock()
 
 
 def get_file_storage() -> FileLogStorage:
-    """Возвращает глобальный экземпляр ``FileLogStorage`` (синглтон)."""
+    """Возвращает глобальный экземпляр ``FileLogStorage`` (синглтон).
+
+    Путь к файлу берётся из настройки ``LOG_TOOLS_FILE_PATH``
+    или используется ``log_tools_logs.jsonl`` в ``BASE_DIR``.
+
+    Returns:
+        Экземпляр ``FileLogStorage``.
+    """
     global _file_storage
     if _file_storage is None:
         with _file_storage_lock:

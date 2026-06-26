@@ -1,6 +1,7 @@
 """Панель логирования для Django.
 
 Предоставляет HTML-интерфейс и JSON API для просмотра логов.
+Поддерживает просмотр как из in-memory хранилища, так и из JSONL-файла.
 """
 from __future__ import annotations
 
@@ -22,11 +23,14 @@ StorageType = Union[LogStorage, FileLogStorage]
 def _get_storage_for_request(request: HttpRequest) -> StorageType:
     """Возвращает хранилище в зависимости от параметра ``source``.
 
+    Если ``?source=file`` — возвращает файловое хранилище.
+    Иначе — хранилище по умолчанию (из настроек).
+
     Args:
         request: HTTP-запрос.
 
     Returns:
-        Экземпляр хранилища.
+        Экземпляр хранилища (``FileLogStorage`` или ``LogStorage``).
     """
     if request.GET.get("source") == "file":
         return get_file_storage()
@@ -37,7 +41,17 @@ def _get_storage_for_request(request: HttpRequest) -> StorageType:
 
 
 def _get_request_collector(request: HttpRequest) -> Collector | None:
-    """Извлекает коллектор из запроса или из thread-local."""
+    """Извлекает коллектор из запроса или из thread-local.
+
+    Сначала проверяет текущий thread-local коллектор, затем —
+    коллектор, привязанный к запросу middleware.
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        ``Collector`` или ``None``.
+    """
     collector = current_collector()
     if collector is None:
         collector = getattr(request, "_log_tools_collector", None)
@@ -45,7 +59,17 @@ def _get_request_collector(request: HttpRequest) -> Collector | None:
 
 
 def _safe_int(value: str | None, default: int, min_val: int = 0, max_val: int | None = None) -> int:
-    """Безопасно преобразует строку в int с дефолтом и ограничениями."""
+    """Безопасно преобразует строку в int с дефолтом и ограничениями.
+
+    Args:
+        value: Строка для преобразования.
+        default: Значение по умолчанию при ошибке.
+        min_val: Минимальное допустимое значение.
+        max_val: Максимальное допустимое значение (``None`` — без ограничений).
+
+    Returns:
+        Целое число.
+    """
     if value is None:
         return default
     try:
@@ -59,7 +83,17 @@ def _safe_int(value: str | None, default: int, min_val: int = 0, max_val: int | 
 
 
 def panel_api_view(request: HttpRequest) -> JsonResponse:
-    """Возвращает данные текущего или последнего запроса в формате JSON."""
+    """Возвращает данные текущего или последнего запроса в формате JSON.
+
+    Если есть активный коллектор — возвращает его данные.
+    Иначе — последние логи из хранилища.
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        JSON-ответ со сводкой и списком записей.
+    """
     collector = _get_request_collector(request)
     if collector is not None:
         data: dict[str, Any] = {
@@ -79,7 +113,16 @@ def panel_api_view(request: HttpRequest) -> JsonResponse:
 
 
 def panel_history_api_view(request: HttpRequest) -> JsonResponse:
-    """Возвращает историю последних запросов в формате JSON."""
+    """Возвращает историю последних запросов в формате JSON.
+
+    Поддерживает параметр ``limit`` (по умолчанию 50, максимум 200).
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        JSON-ответ со списком логов.
+    """
     storage = _get_storage_for_request(request)
     limit = _safe_int(request.GET.get("limit"), default=50, min_val=1, max_val=200)
     logs = storage.all(limit=limit)
@@ -90,7 +133,17 @@ def panel_history_api_view(request: HttpRequest) -> JsonResponse:
 
 
 def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
-    """Возвращает детали конкретного лога по индексу."""
+    """Возвращает детали конкретного лога по индексу.
+
+    Включает обнаруженные N+1 паттерны.
+
+    Args:
+        request: HTTP-запрос.
+        index: Индекс лога в истории (0 — последний).
+
+    Returns:
+        JSON-ответ с полными данными лога.
+    """
     from ._serialization import detect_n_plus_one
 
     storage = _get_storage_for_request(request)
@@ -110,7 +163,16 @@ def panel_detail_api_view(request: HttpRequest, index: int) -> JsonResponse:
 
 @csrf_exempt
 def panel_clear_api_view(request: HttpRequest) -> JsonResponse:
-    """Очищает историю логов."""
+    """Очищает историю логов.
+
+    Принимает только POST-запросы.
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        JSON-ответ с подтверждением.
+    """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
@@ -120,7 +182,17 @@ def panel_clear_api_view(request: HttpRequest) -> JsonResponse:
 
 
 def panel_html_view(request: HttpRequest) -> HttpResponse:
-    """Отображает HTML-панель с историей логов."""
+    """Отображает HTML-панель с историей логов.
+
+    Поддерживает параметр ``?source=file`` для просмотра
+    логов из JSONL-файла.
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        HTML-ответ с визуализацией логов.
+    """
     storage = _get_storage_for_request(request)
     logs = storage.all()
     collector = _get_request_collector(request)
@@ -145,7 +217,9 @@ def _serialize_request_log(log: RequestLog) -> dict[str, Any]:
         log: Лог запроса.
 
     Returns:
-        Словарь с данными лога.
+        Словарь с полями: ``method``, ``path``, ``status_code``,
+        ``elapsed_ms``, ``timestamp``, ``summary``, ``entries_count``,
+        ``source``, ``command_name``.
     """
     return {
         "method": log.method,
@@ -161,7 +235,18 @@ def _serialize_request_log(log: RequestLog) -> dict[str, Any]:
 
 
 def get_urls() -> list[URLPattern]:
-    """Возвращает URL-паттерны для панели логирования."""
+    """Возвращает URL-паттерны для панели логирования.
+
+    Включает:
+    - ``/log-tools/`` — HTML-панель с историей
+    - ``/log-tools/api/`` — текущий/последний лог (JSON)
+    - ``/log-tools/api/history/`` — история логов (JSON)
+    - ``/log-tools/api/<index>/`` — детали конкретного лога (JSON)
+    - ``/log-tools/api/clear/`` — очистка истории (POST)
+
+    Returns:
+        Список ``URLPattern`` для подключения в ``urlpatterns``.
+    """
     return [
         path("log-tools/api/history/", panel_history_api_view, name="log_tools_history"),
         path("log-tools/api/clear/", panel_clear_api_view, name="log_tools_clear"),

@@ -1,6 +1,8 @@
 """Генерация standalone HTML-отчёта по логам.
 
 Переиспользует ``panel.html`` для единообразного отображения.
+Создаёт самодостаточный HTML-файл со встроенными данными,
+не требующий работающего Django-сервера.
 """
 from __future__ import annotations
 
@@ -17,6 +19,9 @@ from .file_storage import get_file_storage
 
 def generate_report_html(title: str = "Log Tools Report") -> str:
     """Генерирует HTML-отчёт из файлового хранилища.
+
+    Читает все логи из JSONL-файла и рендерит ``panel.html``
+    в standalone-режиме (данные встроены в HTML).
 
     Args:
         title: Заголовок отчёта.
@@ -60,6 +65,8 @@ def generate_report_html(title: str = "Log Tools Report") -> str:
 
 def open_report(title: str = "Log Tools Report") -> str:
     """Генерирует HTML-отчёт и открывает его в браузере.
+
+    Создаёт временный HTML-файл и открывает через ``webbrowser.open()``.
 
     Args:
         title: Заголовок отчёта.

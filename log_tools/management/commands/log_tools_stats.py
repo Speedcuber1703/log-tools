@@ -1,5 +1,8 @@
 """Management команда для просмотра статистики логов.
 
+Выводит общую статистику, список запросов и обнаруженные N+1 паттерны.
+Поддерживает вывод в консоль, JSON и standalone HTML.
+
 Example:
     python manage.py log_tools_stats
     python manage.py log_tools_stats --limit 10
@@ -17,35 +20,46 @@ from django.core.management.base import BaseCommand, CommandParser
 
 from log_tools.file_storage import FileLogStorage, get_file_storage
 from log_tools._serialization import detect_n_plus_one
-from log_tools.collector import EntryType
+from log_tools.collector import EntryType, Source
 
 
 class Command(BaseCommand):
-    """Показывает статистику логов log-tools."""
+    """Показывает статистику логов, собранных библиотекой log-tools.
+
+    Автоматически включает файловое хранение для доступа к логам.
+    """
 
     help = "Показывает статистику логов log-tools"
 
     def add_arguments(self, parser: CommandParser) -> None:
         """Определяет аргументы команды."""
         parser.add_argument(
-            "--limit", type=int, default=20,
-            help="Количество последних запросов (по умолчанию 20)",
+            "--limit",
+            type=int,
+            default=20,
+            help="Количество последних запросов для отображения (по умолчанию 20)",
         )
         parser.add_argument(
-            "--json", action="store_true", dest="json_output",
+            "--json",
+            action="store_true",
+            dest="json_output",
             help="Вывод в формате JSON",
         )
         parser.add_argument(
-            "--clear", action="store_true",
+            "--clear",
+            action="store_true",
             help="Очистить историю логов",
         )
         parser.add_argument(
-            "--slow-threshold", type=float, default=100,
+            "--slow-threshold",
+            type=float,
+            default=100,
             help="Порог медленных запросов в мс (по умолчанию 100)",
         )
         parser.add_argument(
-            "--html", action="store_true",
-            help="Создать HTML-отчёт и открыть в браузере",
+            "--html",
+            action="store_true",
+            help="Создать standalone HTML-отчёт и открыть в браузере",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -74,7 +88,7 @@ class Command(BaseCommand):
             self._output_text(logs, options)
 
     def _generate_html_report(self) -> None:
-        """Генерирует HTML-отчёт и открывает в браузере."""
+        """Генерирует standalone HTML-отчёт и открывает в браузере."""
         from log_tools.report import open_report
 
         storage = get_file_storage()
@@ -87,7 +101,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"Отчёт создан: {file_path}"))
 
     def _output_text(self, logs: list, options: dict[str, Any]) -> None:
-        """Выводит статистику в консоль."""
+        """Выводит статистику в консоль.
+
+        Показывает общую статистику, N+1 паттерны и детали по каждому запросу.
+        """
         limit = options["limit"]
         threshold = options["slow_threshold"]
         display_logs = logs[:limit]
@@ -166,7 +183,10 @@ class Command(BaseCommand):
             self.stdout.write("")
 
     def _output_json(self, logs: list, options: dict[str, Any]) -> None:
-        """Выводит статистику в формате JSON."""
+        """Выводит статистику в формате JSON.
+
+        Включает все логи с записями и обнаруженными N+1 паттернами.
+        """
         limit = options["limit"]
         display_logs = logs[:limit]
 

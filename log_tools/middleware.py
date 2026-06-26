@@ -1,7 +1,7 @@
 """Django middleware для автоматического логирования запросов.
 
-Создаёт ``Collector`` для каждого входящего запроса, логирует SQL
-и Redis команды, сохраняет результат в хранилище.
+Создаёт ``Collector`` для каждого входящего запроса, замеряет общее
+время выполнения и сохраняет результат в хранилище.
 """
 from __future__ import annotations
 
@@ -23,23 +23,32 @@ _SKIP_PATHS = ("/log-tools/", "/.well-known/")
 class LogToolsMiddleware:
     """Django middleware для автоматического логирования запросов.
 
+    Создаёт ``Collector`` для каждого входящего запроса, замеряет общее
+    время выполнения и сохраняет коллектор в ``request._log_tools_collector``.
+    Если запрос выполняется дольше порога ``LOG_TOOLS_SLOW_THRESHOLD_MS``,
+    в лог пишется предупреждение.
+
     Example:
-        MIDDLEWARE = [
-            ...
-            "log_tools.middleware.LogToolsMiddleware",
-        ]
+        Добавьте в ``MIDDLEWARE``::
+
+            MIDDLEWARE = [
+                ...
+                "log_tools.middleware.LogToolsMiddleware",
+            ]
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         """Инициализирует middleware.
 
         Args:
-            get_response: Callable для получения ответа.
+            get_response: Callable, возвращающий ``HttpResponse`` для запроса.
         """
         self.get_response: Callable[[HttpRequest], HttpResponse] = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        """Обрабатывает запрос: создаёт коллектор, логирует, сохраняет.
+        """Обрабатывает запрос: создаёт коллектор, проксирует вызов, логирует.
+
+        Запросы к ``/log-tools/`` и ``/.well-known/`` не сохраняются.
 
         Args:
             request: Входящий HTTP-запрос.
@@ -48,6 +57,7 @@ class LogToolsMiddleware:
             HTTP-ответ.
         """
         from .settings import LOG_TOOLS
+
         collector = Collector(
             name=f"{request.method} {request.path}",
             slow_threshold_ms=LOG_TOOLS.SLOW_THRESHOLD_MS,
@@ -64,14 +74,12 @@ class LogToolsMiddleware:
         collector.finish()
 
         if not any(request.path.startswith(p) for p in _SKIP_PATHS):
-            from .settings import LOG_TOOLS
             if LOG_TOOLS.FILE_STORAGE:
                 self._save_to_file(collector, response.status_code)
             else:
                 save_collector(collector, status_code=response.status_code)
 
         summary = collector.summary()
-        from .settings import LOG_TOOLS
         slow_threshold: float = getattr(
             request, "_log_tools_slow_threshold", LOG_TOOLS.SLOW_THRESHOLD_MS,
         )
@@ -120,10 +128,14 @@ class LogToolsMiddleware:
 def get_collector_from_request(request: HttpRequest) -> Collector | None:
     """Извлекает коллектор из HTTP-запроса.
 
+    Коллектор привязывается к запросу в ``LogToolsMiddleware.__call__()``
+    и доступен через ``request._log_tools_collector``.
+
     Args:
         request: HTTP-запрос.
 
     Returns:
-        ``Collector`` или ``None``.
+        ``Collector`` привязанный к запросу, или ``None`` если middleware
+        не активен.
     """
     return getattr(request, "_log_tools_collector", None)

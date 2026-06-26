@@ -1,7 +1,10 @@
 """Сериализация и нормализация лог-записей.
 
-Предоставляет функции для сериализации ``LogEntry``, нормализации SQL
-и обнаружения N+1 паттернов.
+Предоставляет функции для:
+- сериализации ``LogEntry`` в словарь для JSON
+- нормализации SQL-запросов (для группировки дублей)
+- подстановки параметров в SQL
+- обнаружения N+1 паттернов
 """
 from __future__ import annotations
 
@@ -10,7 +13,7 @@ from typing import Any
 
 from .collector import EntryType, LogEntry
 
-# Предкомпилированные regex-паттерны
+# Предкомпилированные regex-паттерны для производительности
 _RE_STRING = re.compile(r"'[^']*'")
 _RE_NUMBER = re.compile(r"\b\d+\.?\d*\b")
 _RE_PERCENT_S = re.compile(r"%s")
@@ -24,11 +27,14 @@ _RE_WHERE_CLAUSE = re.compile(r"WHERE.*")
 def serialize_entry(entry: LogEntry) -> dict[str, Any]:
     """Сериализует ``LogEntry`` в словарь для JSON.
 
+    Для SQL-запросов подставляет параметры и нормализует текст.
+
     Args:
         entry: Запись лога.
 
     Returns:
-        Словарь с полями записи.
+        Словарь с полями: ``type``, ``timestamp``, ``duration_ms``,
+        ``is_slow``, ``data``.
     """
     data = dict(entry.data)
     if entry.type == EntryType.SQL:
@@ -47,12 +53,15 @@ def serialize_entry(entry: LogEntry) -> dict[str, Any]:
 def format_sql(sql: str, params: Any = None) -> str:
     """Форматирует SQL-запрос и подставляет параметры inline.
 
+    Использует ``sqlparse`` для форматирования (если доступен).
+    Заменяет ``?`` и ``%s`` плейсхолдеры на реальные значения.
+
     Args:
         sql: Текст SQL-запроса.
-        params: Параметры запроса.
+        params: Параметры запроса (список, кортеж или dict).
 
     Returns:
-        Отформатированный SQL.
+        Отформатированный SQL-запрос с подставленными параметрами.
     """
     if params:
         sql = _substitute_params(sql, params)
@@ -69,14 +78,17 @@ def format_sql(sql: str, params: Any = None) -> str:
 def normalize_sql(sql: str) -> str:
     """Нормализует SQL-запрос для сравнения.
 
-    Заменяет параметры на ``?``, приводит к нижнему регистру,
+    Заменяет строковые литералы на ``?``, числа на ``?``,
+    плейсхолдеры ``?`` и ``%s`` на ``?``, приводит к нижнему регистру,
     убирает лишние пробелы.
+
+    Используется для группировки одинаковых SQL-запросов с разными параметрами.
 
     Args:
         sql: Текст SQL-запроса.
 
     Returns:
-        Нормализованный SQL.
+        Нормализованный SQL-запрос.
     """
     normalized = _RE_STRING.sub("?", sql)
     normalized = _RE_NUMBER.sub("?", normalized)
@@ -90,13 +102,18 @@ def detect_n_plus_one(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Обнаруживает N+1 паттерны в SQL-запросах.
 
     N+1 — это когда один запрос получает список объектов,
-    а затем для каждого объекта делается отдельный запрос.
+    а затем для каждого объекта делается отдельный запрос
+    с ``WHERE ... = ?`` к одной таблице.
+
+    Обнаруживает паттерны с 3+ одинаковыми запросами.
 
     Args:
-        entries: Список записей лога.
+        entries: Список записей лога (сериализованные словари).
 
     Returns:
-        Список обнаруженных N+1 паттернов.
+        Список словарей::
+
+            [{"table": "app_user", "count": 5, "total_ms": 12.3, "sql": "SELECT ..."}]
     """
     sql_entries = [e for e in entries if e.get("type") == EntryType.SQL.value]
     if len(sql_entries) < 2:
@@ -143,6 +160,12 @@ def detect_n_plus_one(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _substitute_params(sql: str, params: Any) -> str:
     """Подставляет параметры в SQL-запрос.
 
+    Поддерживает:
+    - ``?`` плейсхолдеры (SQLite, MySQL)
+    - ``%s`` плейсхолдеры (PostgreSQL)
+    - Позиционные параметры (список/кортеж)
+    - Именованные параметры (dict с ``%(name)s``)
+
     Args:
         sql: SQL-запрос с плейсхолдерами.
         params: Значения параметров.
@@ -157,26 +180,30 @@ def _substitute_params(sql: str, params: Any) -> str:
 
     if isinstance(params, (list, tuple)):
         values = [_quote(v) for v in params]
-        # Try ? placeholders first
+        # Пробуем ? плейсхолдеры
         if "?" in sql:
             parts = sql.split("?", len(values))
-            return "".join(p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values))))
-        # Try %s placeholders
+            return "".join(
+                p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values)))
+            )
+        # Пробуем %s плейсхолдеры
         if "%s" in sql:
             parts = sql.split("%s", len(values))
-            return "".join(p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values))))
+            return "".join(
+                p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values)))
+            )
 
     return sql
 
 
 def _quote(value: Any) -> str:
-    """Форматирует значение SQL-параметра.
+    """Форматирует значение SQL-параметра для подстановки в запрос.
 
     Args:
         value: Значение параметра.
 
     Returns:
-        Строковое представление для SQL.
+        Строковое представление значения, безопасное для SQL.
     """
     if value is None:
         return "NULL"
