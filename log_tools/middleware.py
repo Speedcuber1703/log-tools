@@ -66,7 +66,13 @@ class LogToolsMiddleware:
         Returns:
             HTTP-ответ.
         """
-        collector = Collector(name=f"{request.method} {request.path}")
+        from .settings import LOG_TOOLS
+        slow_threshold: float = LOG_TOOLS.SLOW_THRESHOLD_MS
+
+        collector = Collector(
+            name=f"{request.method} {request.path}",
+            slow_threshold_ms=slow_threshold,
+        )
         collector.start()
         request._log_tools_collector = collector  # type: ignore[attr-defined]
 
@@ -78,14 +84,12 @@ class LogToolsMiddleware:
         collector.finish()
 
         if not request.path.startswith("/log-tools/") and not request.path.startswith("/.well-known/"):
-            from .settings import LOG_TOOLS
             if LOG_TOOLS.FILE_STORAGE:
                 self._save_to_file(collector, response.status_code)
             else:
                 save_collector(collector, status_code=response.status_code)
 
         summary = collector.summary()
-        slow_threshold: float = getattr(request, "_log_tools_slow_threshold", 100)
         if summary["elapsed_ms"] > slow_threshold:
             logger.warning(
                 "Slow request: %s %s took %.1fms | SQL: %d queries (%.1fms) | Redis: %d commands (%.1fms)",
