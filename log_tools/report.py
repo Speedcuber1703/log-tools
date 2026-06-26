@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import webbrowser
@@ -31,6 +32,24 @@ def generate_report_html(title: str = "Log Tools Report") -> str:
     storage = get_file_storage()
     logs = storage.all()
 
+    # Сериализуем логи в JSON один раз на стороне Python: шаблон встраивает
+    # готовую JSON-строку, а не Python-repr словарей (последнее даёт невалидный
+    # JS — True/None/кортежи). Так standalone-панель открывается без сервера.
+    standalone_logs = [
+        {
+            "method": log.method,
+            "path": log.path,
+            "status_code": log.status_code,
+            "elapsed_ms": log.elapsed_ms,
+            "timestamp": log.timestamp,
+            "summary": log.summary,
+            "entries": log.entries,
+            "source": getattr(log, "source", "http"),
+            "command_name": getattr(log, "command_name", None),
+        }
+        for log in logs
+    ]
+
     context: dict[str, Any] = {
         "collector": None,
         "current_summary": {},
@@ -40,6 +59,7 @@ def generate_report_html(title: str = "Log Tools Report") -> str:
         "aggregate": storage.aggregate_stats(),
         "source_type": "file",
         "standalone": True,
+        "standalone_logs_json": json.dumps(standalone_logs, ensure_ascii=False),
         "title": title,
     }
 
