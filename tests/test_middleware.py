@@ -1,5 +1,6 @@
 import pytest
 from django.http import HttpRequest, HttpResponse
+from django.test import override_settings
 
 from log_tools.middleware import LogToolsMiddleware, get_collector_from_request
 from log_tools.collector import current_collector
@@ -51,3 +52,19 @@ class TestMiddleware:
         assert summary["name"] == "GET /summary-test"
         assert summary["elapsed_ms"] > 0
         assert summary["total_entries"] >= 1
+
+    @override_settings(LOG_TOOLS_SLOW_THRESHOLD_MS=0.001)
+    def test_configured_slow_threshold_is_applied(self):
+        mw = LogToolsMiddleware(dummy_view)
+        request = HttpRequest()
+        request.method = "GET"
+        request.path = "/slow"
+
+        mw(request)
+
+        collector = get_collector_from_request(request)
+        # Настроенный порог должен дойти до коллектора, а не быть зашитой сотней.
+        assert collector.slow_threshold_ms == 0.001
+        total = collector.timing_entries()[0]
+        assert total.data["label"] == "total"
+        assert total.is_slow is True

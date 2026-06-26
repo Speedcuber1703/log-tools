@@ -88,7 +88,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("История логов пуста."))
             return
 
-        file_path = open_report(logs, title="Log Tools — Статистика")
+        file_path = open_report(title="Log Tools — Статистика")
         self.stdout.write(self.style.SUCCESS(f"Отчёт создан: {file_path}"))
         self.stdout.write(self.style.HTTP_INFO("Открываю в браузере..."))
 
