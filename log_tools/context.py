@@ -16,7 +16,7 @@ from .collector import Collector, Source, current_collector
 
 F = TypeVar('F', bound=Callable[..., Any])
 
-DEFAULT_SLOW_THRESHOLD_MS: float = 100
+DEFAULT_SLOW_THRESHOLD_MS: float = 1000
 
 
 class LogContext:
