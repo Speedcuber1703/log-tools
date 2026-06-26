@@ -1,25 +1,41 @@
+"""Сборщик лог-записей для одного запроса или блока кода.
+
+Предоставляет ``Collector`` для накопления SQL, Redis и timing-записей.
+Поддерживает вложенность через thread-local хранилище.
+"""
 from __future__ import annotations
 
 import time
 import threading
+import types
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 
 class EntryType(str, Enum):
-    """Тип записи в логе.
-
-    - SQL — обращение к базе данных
-    - REDIS — команда Redis
-    - TIMING — замер времени выполнения блока кода
-    - LOG — произвольное сообщение
-    """
+    """Тип записи в логе."""
 
     TIMING = "timing"
     SQL = "sql"
     REDIS = "redis"
     LOG = "log"
+
+
+class Source(str, Enum):
+    """Источник логов."""
+
+    HTTP = "http"
+    COMMAND = "command"
+
+
+class LogLevel(str, Enum):
+    """Уровень логирования."""
+
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
 
 
 @dataclass
@@ -54,12 +70,6 @@ class Collector:
     Использует thread-local хранилище для изоляции вложений.
     Вложенные коллекторы корректно восстанавливают предыдущий при ``finish()``.
 
-    Attributes:
-        name: Имя коллектора (например, ``"GET /api/users"``).
-        slow_threshold_ms: Порог в миллисекундах, выше которого операция
-            считается медленной. По умолчанию 100 мс.
-        entries: Список всех записей лога.
-
     Example:
         >>> collector = Collector(name="my-request")
         >>> collector.start()
@@ -69,18 +79,24 @@ class Collector:
         {"name": "my-request", "elapsed_ms": 12.3, "sql_count": 1, ...}
     """
 
-    def __init__(self, name: str | None = None, slow_threshold_ms: float = 100, source: str = "http", command_name: str | None = None) -> None:
+    def __init__(
+        self,
+        name: str | None = None,
+        slow_threshold_ms: float = 100,
+        source: Source = Source.HTTP,
+        command_name: str | None = None,
+    ) -> None:
         """Инициализирует коллектор.
 
         Args:
             name: Имя коллектора для идентификации в логах.
             slow_threshold_ms: Порог медленных операций в миллисекундах.
-            source: Источник логов (``"http"`` или ``"command"``).
-            command_name: Имя management-команды (если applicable).
+            source: Источник логов (HTTP или COMMAND).
+            command_name: Имя management-команды.
         """
         self.name: str = name or "default"
         self.slow_threshold_ms: float = slow_threshold_ms
-        self.source: str = source
+        self.source: Source = source
         self.command_name: str | None = command_name
         self.entries: list[LogEntry] = []
         self._start_time: float = 0.0
@@ -95,7 +111,7 @@ class Collector:
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: Any,
+        exc_tb: types.TracebackType | None,
     ) -> None:
         """Деактивирует коллектор при выходе из контекста."""
         self.finish()
@@ -111,26 +127,23 @@ class Collector:
         _collector_var.collector = self
 
     def finish(self) -> None:
-        """Деактивирует коллектор и восстанавливает предыдущий.
-
-        Вызывается автоматически при выходе из контекста или вручную.
-        """
+        """Деактивирует коллектор и восстанавливает предыдущий."""
         if getattr(_collector_var, "collector", None) is self:
             _collector_var.collector = self._prev
         self._prev = None
 
     def elapsed_ms(self) -> float:
-        """Возвращает время работы коллектора в миллисекундах с момента ``start()``.
+        """Возвращает время работы коллектора в миллисекундах.
 
         Returns:
-            Время в миллисекундах.
+            Время в миллисекундах с момента ``start()``.
         """
         return (time.monotonic() - self._start_time) * 1000
 
     def add(self, entry: LogEntry) -> None:
         """Добавляет запись в лог.
 
-        Если ``duration_ms`` записи превышает ``slow_threshold_ms``,
+        Если ``duration_ms`` превышает ``slow_threshold_ms``,
         запись помечается как медленная.
 
         Args:
@@ -151,8 +164,8 @@ class Collector:
 
         Args:
             sql: Текст SQL-запроса.
-            params: Параметры запроса (если есть).
-            duration_ms: Время выполнения запроса в миллисекундах.
+            params: Параметры запроса.
+            duration_ms: Время выполнения в миллисекундах.
             alias: Имя базы данных (из ``DATABASES``).
         """
         self.add(LogEntry(
@@ -172,11 +185,11 @@ class Collector:
         """Добавляет запись о команде Redis.
 
         Args:
-            command: Имя команды (например, ``"GET"``, ``"SET"``).
+            command: Имя команды (например, ``"GET"``).
             args: Позиционные аргументы команды.
             kwargs: Именованные аргументы команды.
-            duration_ms: Время выполнения команды в миллисекундах.
-            client_name: Имя Redis-клиента (при использовании кластера).
+            duration_ms: Время выполнения в миллисекундах.
+            client_name: Имя Redis-клиента.
         """
         self.add(LogEntry(
             type=EntryType.REDIS,
@@ -193,7 +206,7 @@ class Collector:
         """Добавляет замер времени выполнения блока кода.
 
         Args:
-            label: Название блока (например, ``"total"``, ``"serialization"``).
+            label: Название блока.
             duration_ms: Время выполнения в миллисекундах.
         """
         self.add(LogEntry(
@@ -202,65 +215,62 @@ class Collector:
             duration_ms=duration_ms,
         ))
 
-    def add_log(self, message: str, level: str = "info", **extra: Any) -> None:
+    def add_log(
+        self,
+        message: str,
+        level: LogLevel = LogLevel.INFO,
+        **extra: Any,
+    ) -> None:
         """Добавляет произвольное текстовое сообщение в лог.
 
         Args:
             message: Текст сообщения.
-            level: Уровень логирования (``"debug"``, ``"info"``, ``"warning"``, ``"error"``).
-            **extra: Дополнительные данные, которые будут добавлены в ``data`` записи.
+            level: Уровень логирования.
+            **extra: Дополнительные данные в ``data`` записи.
         """
         self.add(LogEntry(
             type=EntryType.LOG,
-            data={"message": message, "level": level, **extra},
+            data={"message": message, "level": level.value, **extra},
         ))
 
     def sql_entries(self) -> list[LogEntry]:
-        """Возвращает только SQL-записи.
+        """Возвращает SQL-записи.
 
         Returns:
             Список записей типа ``EntryType.SQL``.
         """
-        return [entry for entry in self.entries if entry.type == EntryType.SQL]
+        return [e for e in self.entries if e.type == EntryType.SQL]
 
     def redis_entries(self) -> list[LogEntry]:
-        """Возвращает только Redis-записи.
+        """Возвращает Redis-записи.
 
         Returns:
             Список записей типа ``EntryType.REDIS``.
         """
-        return [entry for entry in self.entries if entry.type == EntryType.REDIS]
+        return [e for e in self.entries if e.type == EntryType.REDIS]
 
     def timing_entries(self) -> list[LogEntry]:
-        """Возвращает только записи с замерами времени.
+        """Возвращает записи с замерами времени.
 
         Returns:
             Список записей типа ``EntryType.TIMING``.
         """
-        return [entry for entry in self.entries if entry.type == EntryType.TIMING]
+        return [e for e in self.entries if e.type == EntryType.TIMING]
 
     def summary(self) -> dict[str, Any]:
         """Формирует сводку по всем записям коллектора.
 
         Returns:
-            Словарь с ключами:
-            - ``name`` — имя коллектора
-            - ``elapsed_ms`` — общее время работы
-            - ``sql_count`` — количество SQL-запросов
-            - ``sql_total_ms`` — суммарное время SQL
-            - ``sql_slow`` — список медленных SQL-запросов
-            - ``redis_count`` — количество Redis-команд
-            - ``redis_total_ms`` — суммарное время Redis
-            - ``redis_slow`` — список медленных Redis-команд
-            - ``total_entries`` — общее количество записей
-            - ``sql_duplicates`` — словарь {нормализованный_sql: количество} для дублей
+            Словарь с ключами: ``name``, ``elapsed_ms``, ``sql_count``,
+            ``sql_total_ms``, ``sql_slow``, ``redis_count``, ``redis_total_ms``,
+            ``redis_slow``, ``total_entries``, ``sql_duplicates``.
         """
         from ._serialization import normalize_sql
 
         sql = self.sql_entries()
         redis = self.redis_entries()
-        total_sql_ms = sum(entry.duration_ms or 0 for entry in sql)
-        total_redis_ms = sum(entry.duration_ms or 0 for entry in redis)
+        total_sql_ms = sum(e.duration_ms or 0 for e in sql)
+        total_redis_ms = sum(e.duration_ms or 0 for e in redis)
 
         sql_dup_map: dict[str, int] = {}
         for entry in sql:
@@ -273,10 +283,16 @@ class Collector:
             "elapsed_ms": self.elapsed_ms(),
             "sql_count": len(sql),
             "sql_total_ms": total_sql_ms,
-            "sql_slow": [{"sql": e.data.get("sql", ""), "duration_ms": e.duration_ms, "params": e.data.get("params")} for e in sql if e.is_slow],
+            "sql_slow": [
+                {"sql": e.data.get("sql", ""), "duration_ms": e.duration_ms, "params": e.data.get("params")}
+                for e in sql if e.is_slow
+            ],
             "redis_count": len(redis),
             "redis_total_ms": total_redis_ms,
-            "redis_slow": [{"command": e.data.get("command", ""), "duration_ms": e.duration_ms} for e in redis if e.is_slow],
+            "redis_slow": [
+                {"command": e.data.get("command", ""), "duration_ms": e.duration_ms}
+                for e in redis if e.is_slow
+            ],
             "total_entries": len(self.entries),
             "sql_duplicates": sql_dup_map,
         }
@@ -284,8 +300,6 @@ class Collector:
 
 def current_collector() -> Collector | None:
     """Возвращает текущий активный коллектор для данного потока.
-
-    Если активного коллектора нет (вызов вне контекста), возвращает ``None``.
 
     Returns:
         Текущий ``Collector`` или ``None``.

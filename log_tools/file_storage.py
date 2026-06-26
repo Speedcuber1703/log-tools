@@ -1,21 +1,38 @@
 """Файловое хранилище логов для персистентного хранения.
 
-Сохраняет логи в JSON-файл между перезапусками приложения.
-Подключается через настройку ``LOG_TOOLS.FILE_STORAGE = True``.
+Сохраняет логи в JSONL-файл между перезапусками приложения.
+Подключается через настройку ``LOG_TOOLS_FILE_STORAGE = True``.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
+
+from .collector import EntryType, Source
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RequestLog:
-    """Сохранённый лог одного HTTP-запроса."""
+    """Сохранённый лог одного HTTP-запроса или команды.
+
+    Attributes:
+        method: HTTP-метод или имя команды.
+        path: Путь запроса или описание блока кода.
+        status_code: HTTP-статус (200 для команд).
+        elapsed_ms: Время выполнения в миллисекундах.
+        timestamp: Unix-таймстемп создания.
+        summary: Сводка из ``Collector.summary()``.
+        entries: Список сериализованных записей лога.
+        source: Источник логов (HTTP или COMMAND).
+        command_name: Имя management-команды.
+    """
 
     method: str
     path: str
@@ -24,14 +41,13 @@ class RequestLog:
     timestamp: float = field(default_factory=time.time)
     summary: dict[str, Any] = field(default_factory=dict)
     entries: list[dict[str, Any]] = field(default_factory=list)
-    source: str = "http"
+    source: Source = Source.HTTP
     command_name: str | None = None
 
 
 class FileLogStorage:
-    """Файловое хранилище логов в формате JSON.
+    """Файловое хранилище логов в формате JSONL.
 
-    Логи хранятся в JSON-файле, одна запись на строку (JSONL формат).
     Потокобезопасно для записи через ``threading.Lock``.
 
     Attributes:
@@ -52,6 +68,7 @@ class FileLogStorage:
         """
         with self._lock:
             with open(self.file_path, "a", encoding="utf-8") as f:
+                source_val = log.source.value if hasattr(log.source, "value") else log.source
                 record = {
                     "method": log.method,
                     "path": log.path,
@@ -60,7 +77,7 @@ class FileLogStorage:
                     "timestamp": log.timestamp,
                     "summary": log.summary,
                     "entries": log.entries,
-                    "source": log.source,
+                    "source": source_val,
                     "command_name": log.command_name,
                 }
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -68,7 +85,7 @@ class FileLogStorage:
             self._truncate_if_needed()
 
     def _truncate_if_needed(self) -> None:
-        """Обрезает файл, оставляя только последние ``max_size`` записей."""
+        """Обрезает файл, оставляя последние ``max_size`` записей."""
         logs = self._read_all()
         if len(logs) > self.max_size:
             logs = logs[-self.max_size:]
@@ -76,7 +93,7 @@ class FileLogStorage:
                 for record in logs:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def _read_all(self) -> list[dict]:
+    def _read_all(self) -> list[dict[str, Any]]:
         """Читает все записи из файла.
 
         Returns:
@@ -85,7 +102,7 @@ class FileLogStorage:
         if not os.path.exists(self.file_path):
             return []
 
-        records = []
+        records: list[dict[str, Any]] = []
         with open(self.file_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -93,6 +110,7 @@ class FileLogStorage:
                     try:
                         records.append(json.loads(line))
                     except json.JSONDecodeError:
+                        logger.debug("Пропуск повреждённой строки в %s", self.file_path)
                         continue
         return records
 
@@ -108,7 +126,7 @@ class FileLogStorage:
         records = self._read_all()
         records.reverse()
 
-        if limit:
+        if limit is not None:
             records = records[:limit]
 
         return [
@@ -120,7 +138,7 @@ class FileLogStorage:
                 timestamp=r.get("timestamp", 0),
                 summary=r.get("summary", {}),
                 entries=r.get("entries", []),
-                source=r.get("source", "http"),
+                source=Source(r.get("source", Source.HTTP.value)),
                 command_name=r.get("command_name"),
             )
             for r in records
@@ -134,10 +152,13 @@ class FileLogStorage:
 
     def count(self) -> int:
         """Возвращает количество сохранённых логов."""
-        return len(self._read_all())
+        if not os.path.exists(self.file_path):
+            return 0
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            return sum(1 for line in f if line.strip())
 
-    def aggregate_stats(self) -> dict:
-        """Возвращает агрегатную статистику по всем сохранённым логам."""
+    def aggregate_stats(self) -> dict[str, Any]:
+        """Возвращает агрегатную статистику по всем логам."""
         from ._serialization import normalize_sql
 
         logs = self.all()
@@ -145,7 +166,7 @@ class FileLogStorage:
         total_sql = 0
         total_redis = 0
         total_elapsed_ms = 0.0
-        sql_texts: dict[str, dict] = {}
+        sql_texts: dict[str, dict[str, Any]] = {}
 
         for log in logs:
             total_sql += log.summary.get("sql_count", 0)
@@ -153,8 +174,9 @@ class FileLogStorage:
             total_elapsed_ms += log.elapsed_ms
 
             for entry in log.entries:
-                if entry.get("type") == "sql":
-                    raw_sql = entry.get("data", {}).get("sql", "")
+                if entry.get("type") == EntryType.SQL.value:
+                    data = entry.get("data") or {}
+                    raw_sql = data.get("sql", "")
                     normalized = normalize_sql(raw_sql)
                     if normalized not in sql_texts:
                         sql_texts[normalized] = {"sql": raw_sql, "count": 0, "total_ms": 0.0}
@@ -187,11 +209,7 @@ _file_storage_lock: threading.Lock = threading.Lock()
 
 
 def get_file_storage() -> FileLogStorage:
-    """Возвращает глобальный экземпляр ``FileLogStorage`` (синглтон).
-
-    Путь к файлу берётся из настройки ``LOG_TOOLS_FILE_PATH``
-    или используется ``log_tools_logs.jsonl`` в ``BASE_DIR``.
-    """
+    """Возвращает глобальный экземпляр ``FileLogStorage`` (синглтон)."""
     global _file_storage
     if _file_storage is None:
         with _file_storage_lock:

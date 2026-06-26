@@ -1,21 +1,32 @@
+"""Панель логирования для Django.
+
+Предоставляет HTML-интерфейс и JSON API для просмотра логов.
+"""
 from __future__ import annotations
+
+from typing import Any, Union
 
 from django.http import HttpRequest, JsonResponse, HttpResponse
 from django.urls import URLPattern, path
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from .collector import Collector, LogEntry, current_collector
-from .storage import get_storage, RequestLog
-from .file_storage import get_file_storage, RequestLog as FileRequestLog
+from .collector import Collector, Source, current_collector
+from .storage import LogStorage, get_storage, RequestLog
+from .file_storage import FileLogStorage, get_file_storage
 from ._serialization import serialize_entry
 
+StorageType = Union[LogStorage, FileLogStorage]
 
-def _get_storage_for_request(request: HttpRequest):
-    """Возвращает хранилище в зависимости от параметра source в запросе.
 
-    Если ``?source=file`` — возвращает файловое хранилище.
-    Иначе — хранилище по умолчанию (из настроек).
+def _get_storage_for_request(request: HttpRequest) -> StorageType:
+    """Возвращает хранилище в зависимости от параметра ``source``.
+
+    Args:
+        request: HTTP-запрос.
+
+    Returns:
+        Экземпляр хранилища.
     """
     if request.GET.get("source") == "file":
         return get_file_storage()
@@ -33,11 +44,25 @@ def _get_request_collector(request: HttpRequest) -> Collector | None:
     return collector
 
 
+def _safe_int(value: str | None, default: int, min_val: int = 0, max_val: int | None = None) -> int:
+    """Безопасно преобразует строку в int с дефолтом и ограничениями."""
+    if value is None:
+        return default
+    try:
+        result = int(value)
+    except (ValueError, TypeError):
+        return default
+    result = max(min_val, result)
+    if max_val is not None:
+        result = min(max_val, result)
+    return result
+
+
 def panel_api_view(request: HttpRequest) -> JsonResponse:
     """Возвращает данные текущего или последнего запроса в формате JSON."""
     collector = _get_request_collector(request)
     if collector is not None:
-        data: dict[str, object] = {
+        data: dict[str, Any] = {
             "summary": collector.summary(),
             "entries": [serialize_entry(entry) for entry in collector.entries],
         }
@@ -56,8 +81,8 @@ def panel_api_view(request: HttpRequest) -> JsonResponse:
 def panel_history_api_view(request: HttpRequest) -> JsonResponse:
     """Возвращает историю последних запросов в формате JSON."""
     storage = _get_storage_for_request(request)
-    limit = min(int(request.GET.get("limit", 50)), 200)
-    logs = storage.all()[:limit]
+    limit = _safe_int(request.GET.get("limit"), default=50, min_val=1, max_val=200)
+    logs = storage.all(limit=limit)
     return JsonResponse({
         "count": storage.count(),
         "logs": [_serialize_request_log(log) for log in logs],
@@ -100,20 +125,28 @@ def panel_html_view(request: HttpRequest) -> HttpResponse:
     logs = storage.all()
     collector = _get_request_collector(request)
 
-    context: dict[str, object] = {
+    context: dict[str, Any] = {
         "collector": collector,
         "current_summary": collector.summary() if collector else {},
         "current_entries": collector.entries if collector else [],
         "history": logs,
         "history_count": storage.count(),
-        "aggregate": storage.aggregate_stats(),
-        "source_type": request.GET.get("source", "http"),
+        "aggregate": storage.aggregate_stats() if logs else {},
+        "source_type": request.GET.get("source", Source.HTTP.value),
+        "standalone": False,
     }
     return render(request, "log_tools/panel.html", context)
 
 
-def _serialize_request_log(log: Any) -> dict[str, object]:
-    """Сериализует ``RequestLog`` в словарь для JSON."""
+def _serialize_request_log(log: RequestLog) -> dict[str, Any]:
+    """Сериализует ``RequestLog`` в словарь для JSON.
+
+    Args:
+        log: Лог запроса.
+
+    Returns:
+        Словарь с данными лога.
+    """
     return {
         "method": log.method,
         "path": log.path,
@@ -122,8 +155,8 @@ def _serialize_request_log(log: Any) -> dict[str, object]:
         "timestamp": log.timestamp,
         "summary": log.summary,
         "entries_count": len(log.entries),
-        "source": getattr(log, "source", "http"),
-        "command_name": getattr(log, "command_name", None),
+        "source": log.source.value,
+        "command_name": log.command_name,
     }
 
 

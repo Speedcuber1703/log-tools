@@ -1,3 +1,12 @@
+"""Management команда для просмотра статистики логов.
+
+Example:
+    python manage.py log_tools_stats
+    python manage.py log_tools_stats --limit 10
+    python manage.py log_tools_stats --json
+    python manage.py log_tools_stats --clear
+    python manage.py log_tools_stats --html
+"""
 from __future__ import annotations
 
 import json
@@ -6,56 +15,41 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
 
-from log_tools.file_storage import get_file_storage
+from log_tools.file_storage import FileLogStorage, get_file_storage
 from log_tools._serialization import detect_n_plus_one
+from log_tools.collector import EntryType
 
 
 class Command(BaseCommand):
-    """Показывает статистику логов, собранных библиотекой log-tools.
-
-    Автоматически включает файловое хранение.
-
-    Example:
-        python manage.py log_tools_stats
-        python manage.py log_tools_stats --limit 10
-        python manage.py log_tools_stats --json
-        python manage.py log_tools_stats --clear
-        python manage.py log_tools_stats --html
-    """
+    """Показывает статистику логов log-tools."""
 
     help = "Показывает статистику логов log-tools"
 
     def add_arguments(self, parser: CommandParser) -> None:
+        """Определяет аргументы команды."""
         parser.add_argument(
-            "--limit",
-            type=int,
-            default=20,
-            help="Количество последних запросов для отображения (по умолчанию 20)",
+            "--limit", type=int, default=20,
+            help="Количество последних запросов (по умолчанию 20)",
         )
         parser.add_argument(
-            "--json",
-            action="store_true",
-            dest="json_output",
+            "--json", action="store_true", dest="json_output",
             help="Вывод в формате JSON",
         )
         parser.add_argument(
-            "--clear",
-            action="store_true",
+            "--clear", action="store_true",
             help="Очистить историю логов",
         )
         parser.add_argument(
-            "--slow-threshold",
-            type=float,
-            default=100,
+            "--slow-threshold", type=float, default=100,
             help="Порог медленных запросов в мс (по умолчанию 100)",
         )
         parser.add_argument(
-            "--html",
-            action="store_true",
-            help="Создать standalone HTML-отчёт и открыть в браузере",
+            "--html", action="store_true",
+            help="Создать HTML-отчёт и открыть в браузере",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        """Выполняет команду."""
         os.environ.setdefault("LOG_TOOLS_FILE_STORAGE", "True")
 
         storage = get_file_storage()
@@ -66,7 +60,7 @@ class Command(BaseCommand):
             return
 
         if options["html"]:
-            self._generate_html_report(storage)
+            self._generate_html_report()
             return
 
         logs = storage.all()
@@ -79,10 +73,11 @@ class Command(BaseCommand):
         else:
             self._output_text(logs, options)
 
-    def _generate_html_report(self, storage: Any) -> None:
-        """Генерирует standalone HTML-отчёт и открывает в браузере."""
+    def _generate_html_report(self) -> None:
+        """Генерирует HTML-отчёт и открывает в браузере."""
         from log_tools.report import open_report
 
+        storage = get_file_storage()
         logs = storage.all()
         if not logs:
             self.stdout.write(self.style.WARNING("История логов пуста."))
@@ -90,9 +85,9 @@ class Command(BaseCommand):
 
         file_path = open_report(title="Log Tools — Статистика")
         self.stdout.write(self.style.SUCCESS(f"Отчёт создан: {file_path}"))
-        self.stdout.write(self.style.HTTP_INFO("Открываю в браузере..."))
 
-    def _output_text(self, logs: list, options: dict) -> None:
+    def _output_text(self, logs: list, options: dict[str, Any]) -> None:
+        """Выводит статистику в консоль."""
         limit = options["limit"]
         threshold = options["slow_threshold"]
         display_logs = logs[:limit]
@@ -110,14 +105,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  Среднее время:   {avg_elapsed:.1f}мс")
         self.stdout.write("")
 
-        n_plus_one_all = []
+        n_plus_one_all: list[dict[str, Any]] = []
         for log in logs:
-            np1 = detect_n_plus_one(log.entries)
-            n_plus_one_all.extend(np1)
+            n_plus_one_all.extend(detect_n_plus_one(log.entries))
 
         if n_plus_one_all:
             self.stdout.write(self.style.WARNING("=== Обнаруженные N+1 паттерны ==="))
-            seen = set()
+            seen: set[tuple[str, int]] = set()
             for np1 in n_plus_one_all:
                 key = (np1["table"], np1["count"])
                 if key not in seen:
@@ -134,10 +128,8 @@ class Command(BaseCommand):
         for i, log in enumerate(display_logs):
             status_color = self.style.SUCCESS if log.status_code < 400 else self.style.ERROR
             slow_marker = self.style.WARNING(" SLOW") if log.elapsed_ms > threshold else ""
-            source = getattr(log, "source", "http")
-            command = getattr(log, "command_name", None)
-            source_info = f" [{source}]" if source != "http" else ""
-            command_info = f" ({command})" if command else ""
+            source_info = f" [{log.source.value}]" if log.source != Source.HTTP else ""
+            command_info = f" ({log.command_name})" if log.command_name else ""
 
             self.stdout.write(
                 f"  {i+1:3d}. {log.method:6s} {log.path}"
@@ -151,7 +143,8 @@ class Command(BaseCommand):
             )
 
             for entry in log.entries:
-                if entry.get("type") == "sql":
+                entry_type = entry.get("type")
+                if entry_type == EntryType.SQL.value:
                     sql = entry.get("data", {}).get("sql", "")
                     dur = entry.get("duration_ms", 0)
                     normalized = entry.get("data", {}).get("normalized_sql", "")
@@ -161,7 +154,7 @@ class Command(BaseCommand):
                         f"         {self.style.SQL_KEYWORD('SQL')}"
                         f" {dur:.2f}мс{dup_marker}: {sql[:80]}"
                     )
-                elif entry.get("type") == "redis":
+                elif entry_type == EntryType.REDIS.value:
                     cmd = entry.get("data", {}).get("command", "")
                     args = entry.get("data", {}).get("args", ())
                     dur = entry.get("duration_ms", 0)
@@ -172,27 +165,24 @@ class Command(BaseCommand):
 
             self.stdout.write("")
 
-    def _output_json(self, logs: list, options: dict) -> None:
+    def _output_json(self, logs: list, options: dict[str, Any]) -> None:
+        """Выводит статистику в формате JSON."""
         limit = options["limit"]
         display_logs = logs[:limit]
 
-        data = {
-            "total_logs": len(logs),
-            "logs": []
-        }
+        data: dict[str, Any] = {"total_logs": len(logs), "logs": []}
 
         for log in display_logs:
-            np1 = detect_n_plus_one(log.entries)
             data["logs"].append({
                 "method": log.method,
                 "path": log.path,
                 "status_code": log.status_code,
                 "elapsed_ms": log.elapsed_ms,
                 "summary": log.summary,
-                "n_plus_one": np1,
+                "n_plus_one": detect_n_plus_one(log.entries),
                 "entries": log.entries,
-                "source": getattr(log, "source", "http"),
-                "command_name": getattr(log, "command_name", None),
+                "source": log.source.value,
+                "command_name": log.command_name,
             })
 
         self.stdout.write(json.dumps(data, indent=2, ensure_ascii=False))
