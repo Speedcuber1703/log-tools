@@ -36,7 +36,7 @@ class LoggingCursorWrapper(CursorWrapper):
             return super().execute(sql, params)
         finally:
             duration_ms = (time.monotonic() - start) * 1000
-            alias: str = getattr(self.db, "alias", "default")
+            alias: str = getattr(self.db, 'alias', 'default')
             collector.add_sql(sql=sql, params=params, duration_ms=duration_ms, alias=alias)
 
     def executemany(self, sql: str, param_list: Any) -> Any:
@@ -60,9 +60,9 @@ class LoggingCursorWrapper(CursorWrapper):
             return super().executemany(sql, param_list)
         finally:
             duration_ms = (time.monotonic() - start) * 1000
-            alias: str = getattr(self.db, "alias", "default")
+            alias: str = getattr(self.db, 'alias', 'default')
             collector.add_sql(
-                sql=f"{sql} [x{len(param_list)}]",
+                sql=f'{sql} [x{len(param_list)}]',
                 params=None,
                 duration_ms=duration_ms,
                 alias=alias,
@@ -95,9 +95,9 @@ def patch_db() -> None:
     utils.CursorWrapper = LoggingCursorWrapper  # type: ignore[assignment]
     utils.CursorDebugWrapper = LoggingCursorDebugWrapper  # type: ignore[assignment]
 
-    _patch_db_backend("django.db.backends.postgresql.base")
-    _patch_db_backend("django.db.backends.mysql.base")
-    _patch_db_backend("django.db.backends.sqlite3.base")
+    _patch_db_backend('django.db.backends.postgresql.base')
+    _patch_db_backend('django.db.backends.mysql.base')
+    _patch_db_backend('django.db.backends.sqlite3.base')
 
 
 def _patch_db_backend(module_path: str) -> None:
@@ -114,7 +114,7 @@ def _patch_db_backend(module_path: str) -> None:
     except (ImportError, Exception):
         return
 
-    if hasattr(backend_module, "CursorDebugWrapper"):
+    if hasattr(backend_module, 'CursorDebugWrapper'):
         _ORIGINAL_DB_MODULES[module_path] = backend_module.CursorDebugWrapper
         backend_module.CursorDebugWrapper = LoggingCursorDebugWrapper  # type: ignore[assignment]
 

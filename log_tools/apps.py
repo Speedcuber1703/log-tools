@@ -8,9 +8,9 @@ class LogToolsConfig(AppConfig):
     если соответствующие настройки включены.
     """
 
-    default_auto_field = "django.db.models.BigAutoField"
-    name = "log_tools"
-    verbose_name = "Log Tools"
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'log_tools'
+    verbose_name = 'Log Tools'
 
     def ready(self) -> None:
         """Вызывается Django после загрузки всех приложений.

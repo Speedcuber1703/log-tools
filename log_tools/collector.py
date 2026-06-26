@@ -1,7 +1,14 @@
+"""Сборщик лог-записей для одного запроса или блока кода.
+
+Предоставляет ``Collector`` для накопления SQL, Redis и timing-записей.
+Поддерживает вложенность через thread-local хранилище.
+"""
+
 from __future__ import annotations
 
 import time
 import threading
+import types
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -16,10 +23,36 @@ class EntryType(str, Enum):
     - LOG — произвольное сообщение
     """
 
-    TIMING = "timing"
-    SQL = "sql"
-    REDIS = "redis"
-    LOG = "log"
+    TIMING = 'timing'
+    SQL = 'sql'
+    REDIS = 'redis'
+    LOG = 'log'
+
+
+class Source(str, Enum):
+    """Источник логов.
+
+    - HTTP — запрос через веб-интерфейс
+    - COMMAND — management-команда или скрипт
+    """
+
+    HTTP = 'http'
+    COMMAND = 'command'
+
+
+class LogLevel(str, Enum):
+    """Уровень логирования.
+
+    - DEBUG — отладочная информация
+    - INFO — информационные сообщения
+    - WARNING — предупреждения
+    - ERROR — ошибки
+    """
+
+    DEBUG = 'debug'
+    INFO = 'info'
+    WARNING = 'warning'
+    ERROR = 'error'
 
 
 @dataclass
@@ -58,6 +91,8 @@ class Collector:
         name: Имя коллектора (например, ``"GET /api/users"``).
         slow_threshold_ms: Порог в миллисекундах, выше которого операция
             считается медленной. По умолчанию 100 мс.
+        source: Источник логов (HTTP или COMMAND).
+        command_name: Имя management-команды (если применимо).
         entries: Список всех записей лога.
 
     Example:
@@ -69,18 +104,25 @@ class Collector:
         {"name": "my-request", "elapsed_ms": 12.3, "sql_count": 1, ...}
     """
 
-    def __init__(self, name: str | None = None, slow_threshold_ms: float = 100, source: str = "http", command_name: str | None = None) -> None:
+    def __init__(
+        self,
+        name: str | None = None,
+        slow_threshold_ms: float = 100,
+        source: Source = Source.HTTP,
+        command_name: str | None = None,
+    ) -> None:
         """Инициализирует коллектор.
 
         Args:
             name: Имя коллектора для идентификации в логах.
             slow_threshold_ms: Порог медленных операций в миллисекундах.
-            source: Источник логов (``"http"`` или ``"command"``).
-            command_name: Имя management-команды (если applicable).
+                Операции дольше этого порога помечаются как медленные.
+            source: Источник логов (HTTP или COMMAND).
+            command_name: Имя management-команды (если применимо).
         """
-        self.name: str = name or "default"
+        self.name: str = name or 'default'
         self.slow_threshold_ms: float = slow_threshold_ms
-        self.source: str = source
+        self.source: Source = source
         self.command_name: str | None = command_name
         self.entries: list[LogEntry] = []
         self._start_time: float = 0.0
@@ -95,7 +137,7 @@ class Collector:
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: Any,
+        exc_tb: types.TracebackType | None,
     ) -> None:
         """Деактивирует коллектор при выходе из контекста."""
         self.finish()
@@ -107,7 +149,7 @@ class Collector:
         для корректного восстановления при завершении.
         """
         self._start_time = time.monotonic()
-        self._prev = getattr(_collector_var, "collector", None)
+        self._prev = getattr(_collector_var, 'collector', None)
         _collector_var.collector = self
 
     def finish(self) -> None:
@@ -115,15 +157,15 @@ class Collector:
 
         Вызывается автоматически при выходе из контекста или вручную.
         """
-        if getattr(_collector_var, "collector", None) is self:
+        if getattr(_collector_var, 'collector', None) is self:
             _collector_var.collector = self._prev
         self._prev = None
 
     def elapsed_ms(self) -> float:
-        """Возвращает время работы коллектора в миллисекундах с момента ``start()``.
+        """Возвращает время работы коллектора в миллисекундах.
 
         Returns:
-            Время в миллисекундах.
+            Время в миллисекундах с момента ``start()``.
         """
         return (time.monotonic() - self._start_time) * 1000
 
@@ -145,7 +187,7 @@ class Collector:
         sql: str,
         params: Any = None,
         duration_ms: float = 0.0,
-        alias: str = "default",
+        alias: str = 'default',
     ) -> None:
         """Добавляет запись о SQL-запросе.
 
@@ -155,11 +197,13 @@ class Collector:
             duration_ms: Время выполнения запроса в миллисекундах.
             alias: Имя базы данных (из ``DATABASES``).
         """
-        self.add(LogEntry(
-            type=EntryType.SQL,
-            data={"sql": sql, "params": params, "alias": alias},
-            duration_ms=duration_ms,
-        ))
+        self.add(
+            LogEntry(
+                type=EntryType.SQL,
+                data={'sql': sql, 'params': params, 'alias': alias},
+                duration_ms=duration_ms,
+            )
+        )
 
     def add_redis(
         self,
@@ -167,7 +211,7 @@ class Collector:
         args: tuple[Any, ...] = (),
         kwargs: dict[str, Any] | None = None,
         duration_ms: float = 0.0,
-        client_name: str = "",
+        client_name: str = '',
     ) -> None:
         """Добавляет запись о команде Redis.
 
@@ -178,16 +222,18 @@ class Collector:
             duration_ms: Время выполнения команды в миллисекундах.
             client_name: Имя Redis-клиента (при использовании кластера).
         """
-        self.add(LogEntry(
-            type=EntryType.REDIS,
-            data={
-                "command": command,
-                "args": args,
-                "kwargs": kwargs or {},
-                "client_name": client_name,
-            },
-            duration_ms=duration_ms,
-        ))
+        self.add(
+            LogEntry(
+                type=EntryType.REDIS,
+                data={
+                    'command': command,
+                    'args': args,
+                    'kwargs': kwargs or {},
+                    'client_name': client_name,
+                },
+                duration_ms=duration_ms,
+            )
+        )
 
     def add_timing(self, label: str, duration_ms: float) -> None:
         """Добавляет замер времени выполнения блока кода.
@@ -196,24 +242,33 @@ class Collector:
             label: Название блока (например, ``"total"``, ``"serialization"``).
             duration_ms: Время выполнения в миллисекундах.
         """
-        self.add(LogEntry(
-            type=EntryType.TIMING,
-            data={"label": label},
-            duration_ms=duration_ms,
-        ))
+        self.add(
+            LogEntry(
+                type=EntryType.TIMING,
+                data={'label': label},
+                duration_ms=duration_ms,
+            )
+        )
 
-    def add_log(self, message: str, level: str = "info", **extra: Any) -> None:
+    def add_log(
+        self,
+        message: str,
+        level: LogLevel = LogLevel.INFO,
+        **extra: Any,
+    ) -> None:
         """Добавляет произвольное текстовое сообщение в лог.
 
         Args:
             message: Текст сообщения.
-            level: Уровень логирования (``"debug"``, ``"info"``, ``"warning"``, ``"error"``).
+            level: Уровень логирования.
             **extra: Дополнительные данные, которые будут добавлены в ``data`` записи.
         """
-        self.add(LogEntry(
-            type=EntryType.LOG,
-            data={"message": message, "level": level, **extra},
-        ))
+        self.add(
+            LogEntry(
+                type=EntryType.LOG,
+                data={'message': message, 'level': level.value, **extra},
+            )
+        )
 
     def sql_entries(self) -> list[LogEntry]:
         """Возвращает только SQL-записи.
@@ -264,21 +319,33 @@ class Collector:
 
         sql_dup_map: dict[str, int] = {}
         for entry in sql:
-            raw = entry.data.get("sql", "")
+            raw = entry.data.get('sql', '')
             normalized = normalize_sql(raw)
             sql_dup_map[normalized] = sql_dup_map.get(normalized, 0) + 1
 
         return {
-            "name": self.name,
-            "elapsed_ms": self.elapsed_ms(),
-            "sql_count": len(sql),
-            "sql_total_ms": total_sql_ms,
-            "sql_slow": [{"sql": e.data.get("sql", ""), "duration_ms": e.duration_ms, "params": e.data.get("params")} for e in sql if e.is_slow],
-            "redis_count": len(redis),
-            "redis_total_ms": total_redis_ms,
-            "redis_slow": [{"command": e.data.get("command", ""), "duration_ms": e.duration_ms} for e in redis if e.is_slow],
-            "total_entries": len(self.entries),
-            "sql_duplicates": sql_dup_map,
+            'name': self.name,
+            'elapsed_ms': self.elapsed_ms(),
+            'sql_count': len(sql),
+            'sql_total_ms': total_sql_ms,
+            'sql_slow': [
+                {
+                    'sql': e.data.get('sql', ''),
+                    'duration_ms': e.duration_ms,
+                    'params': e.data.get('params'),
+                }
+                for e in sql
+                if e.is_slow
+            ],
+            'redis_count': len(redis),
+            'redis_total_ms': total_redis_ms,
+            'redis_slow': [
+                {'command': e.data.get('command', ''), 'duration_ms': e.duration_ms}
+                for e in redis
+                if e.is_slow
+            ],
+            'total_entries': len(self.entries),
+            'sql_duplicates': sql_dup_map,
         }
 
 
@@ -290,4 +357,4 @@ def current_collector() -> Collector | None:
     Returns:
         Текущий ``Collector`` или ``None``.
     """
-    return getattr(_collector_var, "collector", None)
+    return getattr(_collector_var, 'collector', None)

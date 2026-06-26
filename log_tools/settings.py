@@ -4,6 +4,7 @@
 а не при импорте модуля. Это позволяет переопределять их
 в ``settings.py`` проекта без проблем с порядком импорта.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -41,7 +42,7 @@ class _Settings:
         Returns:
             Значение настройки или ``default``.
         """
-        full_name = f"LOG_TOOLS_{name}"
+        full_name = f'LOG_TOOLS_{name}'
         return getattr(_django_settings, full_name, default)
 
     @property
@@ -51,7 +52,7 @@ class _Settings:
         Операции дольше этого порога считаются медленными.
         По умолчанию: 100 мс.
         """
-        return self._get("SLOW_THRESHOLD_MS", 100)
+        return self._get('SLOW_THRESHOLD_MS', 100)
 
     @property
     def PATCH_DB(self) -> bool:
@@ -59,7 +60,7 @@ class _Settings:
 
         По умолчанию: ``True``.
         """
-        return self._get("PATCH_DB", True)
+        return self._get('PATCH_DB', True)
 
     @property
     def PATCH_REDIS(self) -> bool:
@@ -67,7 +68,7 @@ class _Settings:
 
         По умолчанию: ``True``.
         """
-        return self._get("PATCH_REDIS", True)
+        return self._get('PATCH_REDIS', True)
 
     @property
     def ENABLE_PANEL(self) -> bool:
@@ -75,7 +76,7 @@ class _Settings:
 
         По умолчанию: ``True``.
         """
-        return self._get("ENABLE_PANEL", True)
+        return self._get('ENABLE_PANEL', True)
 
     @property
     def HISTORY_SIZE(self) -> int:
@@ -83,7 +84,7 @@ class _Settings:
 
         По умолчанию: 100.
         """
-        return self._get("HISTORY_SIZE", 100)
+        return self._get('HISTORY_SIZE', 100)
 
     @property
     def FILE_STORAGE(self) -> bool:
@@ -92,7 +93,7 @@ class _Settings:
         Включает персистентность между перезапусками.
         По умолчанию: ``False``.
         """
-        return self._get("FILE_STORAGE", False)
+        return self._get('FILE_STORAGE', False)
 
     @property
     def FILE_PATH(self) -> str | None:
@@ -100,7 +101,7 @@ class _Settings:
 
         По умолчанию: ``None`` (используется ``log_tools_logs.jsonl`` в ``BASE_DIR``).
         """
-        return self._get("FILE_PATH", None)
+        return self._get('FILE_PATH', None)
 
 
 LOG_TOOLS = _Settings()

@@ -44,7 +44,7 @@ def _create_logging_redis_class() -> type[Any] | None:
             if collector is None:
                 return super().execute_command(*args, **options)
 
-            command: str = str(args[0]) if args else "UNKNOWN"
+            command: str = str(args[0]) if args else 'UNKNOWN'
             cmd_args: tuple[Any, ...] = args[1:] if len(args) > 1 else ()
 
             start = time.monotonic()
