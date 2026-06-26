@@ -3,6 +3,7 @@
 Используется по умолчанию для HTTP-запросов.
 Логи хранятся в ``deque`` с ограниченным размером (кольцевой буфер).
 """
+
 from __future__ import annotations
 
 import threading
@@ -124,38 +125,38 @@ class LogStorage:
         sql_texts: dict[str, dict[str, Any]] = {}
 
         for log in logs:
-            total_sql += log.summary.get("sql_count", 0)
-            total_redis += log.summary.get("redis_count", 0)
+            total_sql += log.summary.get('sql_count', 0)
+            total_redis += log.summary.get('redis_count', 0)
             total_elapsed_ms += log.elapsed_ms
 
             for entry in log.entries:
-                if entry.get("type") == EntryType.SQL.value:
-                    data = entry.get("data") or {}
-                    raw_sql = data.get("sql", "")
+                if entry.get('type') == EntryType.SQL.value:
+                    data = entry.get('data') or {}
+                    raw_sql = data.get('sql', '')
                     normalized = normalize_sql(raw_sql)
                     if normalized not in sql_texts:
-                        sql_texts[normalized] = {"sql": raw_sql, "count": 0, "total_ms": 0.0}
-                    sql_texts[normalized]["count"] += 1
-                    sql_texts[normalized]["total_ms"] += entry.get("duration_ms") or 0
+                        sql_texts[normalized] = {'sql': raw_sql, 'count': 0, 'total_ms': 0.0}
+                    sql_texts[normalized]['count'] += 1
+                    sql_texts[normalized]['total_ms'] += entry.get('duration_ms') or 0
 
         duplicates = [
-            {"sql": v["sql"], "count": v["count"], "total_ms": round(v["total_ms"], 2)}
+            {'sql': v['sql'], 'count': v['count'], 'total_ms': round(v['total_ms'], 2)}
             for v in sql_texts.values()
-            if v["count"] > 1
+            if v['count'] > 1
         ]
-        duplicates.sort(key=lambda x: x["count"], reverse=True)
+        duplicates.sort(key=lambda x: x['count'], reverse=True)
 
         avg_elapsed = round(total_elapsed_ms / total_requests, 1) if total_requests else 0
 
         return {
-            "total_requests": total_requests,
-            "total_sql": total_sql,
-            "total_redis": total_redis,
-            "total_elapsed_ms": round(total_elapsed_ms, 1),
-            "avg_elapsed_ms": avg_elapsed,
-            "unique_sql": len(sql_texts),
-            "duplicate_sql_count": len(duplicates),
-            "duplicates": duplicates,
+            'total_requests': total_requests,
+            'total_sql': total_sql,
+            'total_redis': total_redis,
+            'total_elapsed_ms': round(total_elapsed_ms, 1),
+            'avg_elapsed_ms': avg_elapsed,
+            'unique_sql': len(sql_texts),
+            'duplicate_sql_count': len(duplicates),
+            'duplicates': duplicates,
         }
 
 
@@ -174,6 +175,7 @@ def get_storage() -> LogStorage:
         with _storage_lock:
             if _storage is None:
                 from .settings import LOG_TOOLS
+
                 _storage = LogStorage(max_size=LOG_TOOLS.HISTORY_SIZE)
     return _storage
 
@@ -189,8 +191,8 @@ def save_collector(collector: Any, status_code: int = 200) -> None:
     """
     from ._serialization import serialize_entry
 
-    parts = collector.name.split(" ", 1)
-    method = parts[0] if parts else ""
+    parts = collector.name.split(' ', 1)
+    method = parts[0] if parts else ''
     path = parts[1] if len(parts) > 1 else collector.name
 
     storage = get_storage()

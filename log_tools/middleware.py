@@ -3,6 +3,7 @@
 Создаёт ``Collector`` для каждого входящего запроса, замеряет общее
 время выполнения и сохраняет результат в хранилище.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,9 +16,9 @@ from django.http import HttpRequest, HttpResponse
 from .collector import Collector, Source
 from .storage import save_collector
 
-logger = logging.getLogger("log_tools")
+logger = logging.getLogger('log_tools')
 
-_SKIP_PATHS = ("/log-tools/", "/.well-known/")
+_SKIP_PATHS = ('/log-tools/', '/.well-known/')
 
 
 class LogToolsMiddleware:
@@ -59,7 +60,7 @@ class LogToolsMiddleware:
         from .settings import LOG_TOOLS
 
         collector = Collector(
-            name=f"{request.method} {request.path}",
+            name=f'{request.method} {request.path}',
             slow_threshold_ms=LOG_TOOLS.SLOW_THRESHOLD_MS,
             source=Source.HTTP,
         )
@@ -70,7 +71,7 @@ class LogToolsMiddleware:
         response = self.get_response(request)
         duration_ms: float = (time.monotonic() - start) * 1000
 
-        collector.add_timing(label="total", duration_ms=duration_ms)
+        collector.add_timing(label='total', duration_ms=duration_ms)
         collector.finish()
 
         if not any(request.path.startswith(p) for p in _SKIP_PATHS):
@@ -81,18 +82,20 @@ class LogToolsMiddleware:
 
         summary = collector.summary()
         slow_threshold: float = getattr(
-            request, "_log_tools_slow_threshold", LOG_TOOLS.SLOW_THRESHOLD_MS,
+            request,
+            '_log_tools_slow_threshold',
+            LOG_TOOLS.SLOW_THRESHOLD_MS,
         )
-        if summary["elapsed_ms"] > slow_threshold:
+        if summary['elapsed_ms'] > slow_threshold:
             logger.warning(
-                "Slow request: %s %s took %.1fms | SQL: %d (%.1fms) | Redis: %d (%.1fms)",
+                'Slow request: %s %s took %.1fms | SQL: %d (%.1fms) | Redis: %d (%.1fms)',
                 request.method,
                 request.path,
-                summary["elapsed_ms"],
-                summary["sql_count"],
-                summary["sql_total_ms"],
-                summary["redis_count"],
-                summary["redis_total_ms"],
+                summary['elapsed_ms'],
+                summary['sql_count'],
+                summary['sql_total_ms'],
+                summary['redis_count'],
+                summary['redis_total_ms'],
             )
 
         return response
@@ -107,8 +110,8 @@ class LogToolsMiddleware:
         from ._serialization import serialize_entry
         from .file_storage import get_file_storage, RequestLog
 
-        parts = collector.name.split(" ", 1)
-        method = parts[0] if parts else ""
+        parts = collector.name.split(' ', 1)
+        method = parts[0] if parts else ''
         path = parts[1] if len(parts) > 1 else collector.name
 
         storage = get_file_storage()
@@ -138,4 +141,4 @@ def get_collector_from_request(request: HttpRequest) -> Collector | None:
         ``Collector`` привязанный к запросу, или ``None`` если middleware
         не активен.
     """
-    return getattr(request, "_log_tools_collector", None)
+    return getattr(request, '_log_tools_collector', None)

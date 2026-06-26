@@ -6,6 +6,7 @@
 - подстановки параметров в SQL
 - обнаружения N+1 паттернов
 """
+
 from __future__ import annotations
 
 import re
@@ -15,13 +16,13 @@ from .collector import EntryType, LogEntry
 
 # Предкомпилированные regex-паттерны для производительности
 _RE_STRING = re.compile(r"'[^']*'")
-_RE_NUMBER = re.compile(r"\b\d+\.?\d*\b")
-_RE_PERCENT_S = re.compile(r"%s")
-_RE_PLACEHOLDER = re.compile(r"\?")
-_RE_WHITESPACE = re.compile(r"\s+")
+_RE_NUMBER = re.compile(r'\b\d+\.?\d*\b')
+_RE_PERCENT_S = re.compile(r'%s')
+_RE_PLACEHOLDER = re.compile(r'\?')
+_RE_WHITESPACE = re.compile(r'\s+')
 _RE_FROM_TABLE = re.compile(r'from\s+"?([a-z_]+)"?')
-_RE_WHERE_EQUALS = re.compile(r"where\s+.*=\s*\?")
-_RE_WHERE_CLAUSE = re.compile(r"WHERE.*")
+_RE_WHERE_EQUALS = re.compile(r'where\s+.*=\s*\?')
+_RE_WHERE_CLAUSE = re.compile(r'WHERE.*')
 
 
 def serialize_entry(entry: LogEntry) -> dict[str, Any]:
@@ -38,15 +39,15 @@ def serialize_entry(entry: LogEntry) -> dict[str, Any]:
     """
     data = dict(entry.data)
     if entry.type == EntryType.SQL:
-        raw_sql = data.get("sql", "")
-        data["sql"] = format_sql(raw_sql, data.get("params"))
-        data["normalized_sql"] = normalize_sql(raw_sql)
+        raw_sql = data.get('sql', '')
+        data['sql'] = format_sql(raw_sql, data.get('params'))
+        data['normalized_sql'] = normalize_sql(raw_sql)
     return {
-        "type": entry.type.value,
-        "timestamp": entry.timestamp,
-        "duration_ms": entry.duration_ms,
-        "is_slow": entry.is_slow,
-        "data": data,
+        'type': entry.type.value,
+        'timestamp': entry.timestamp,
+        'duration_ms': entry.duration_ms,
+        'is_slow': entry.is_slow,
+        'data': data,
     }
 
 
@@ -68,7 +69,8 @@ def format_sql(sql: str, params: Any = None) -> str:
 
     try:
         import sqlparse
-        formatted = sqlparse.format(sql, reindent=True, keyword_case="upper")
+
+        formatted = sqlparse.format(sql, reindent=True, keyword_case='upper')
     except ImportError:
         formatted = sql
 
@@ -90,11 +92,11 @@ def normalize_sql(sql: str) -> str:
     Returns:
         Нормализованный SQL-запрос.
     """
-    normalized = _RE_STRING.sub("?", sql)
-    normalized = _RE_NUMBER.sub("?", normalized)
-    normalized = _RE_PERCENT_S.sub("?", normalized)
-    normalized = _RE_PLACEHOLDER.sub("?", normalized)
-    normalized = _RE_WHITESPACE.sub(" ", normalized).strip()
+    normalized = _RE_STRING.sub('?', sql)
+    normalized = _RE_NUMBER.sub('?', normalized)
+    normalized = _RE_PERCENT_S.sub('?', normalized)
+    normalized = _RE_PLACEHOLDER.sub('?', normalized)
+    normalized = _RE_WHITESPACE.sub(' ', normalized).strip()
     return normalized.lower()
 
 
@@ -115,15 +117,15 @@ def detect_n_plus_one(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
             [{"table": "app_user", "count": 5, "total_ms": 12.3, "sql": "SELECT ..."}]
     """
-    sql_entries = [e for e in entries if e.get("type") == EntryType.SQL.value]
+    sql_entries = [e for e in entries if e.get('type') == EntryType.SQL.value]
     if len(sql_entries) < 2:
         return []
 
     patterns: dict[str, dict[str, Any]] = {}
     for entry in sql_entries:
-        sql = entry.get("data", {}).get("sql", "")
-        normalized = entry.get("data", {}).get("normalized_sql", "")
-        duration = entry.get("duration_ms") or 0
+        sql = entry.get('data', {}).get('sql', '')
+        normalized = entry.get('data', {}).get('normalized_sql', '')
+        duration = entry.get('duration_ms') or 0
 
         table_match = _RE_FROM_TABLE.search(normalized)
         if not table_match:
@@ -133,27 +135,29 @@ def detect_n_plus_one(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not _RE_WHERE_EQUALS.search(normalized):
             continue
 
-        base_query = _RE_WHERE_CLAUSE.sub("WHERE ?", normalized)
+        base_query = _RE_WHERE_CLAUSE.sub('WHERE ?', normalized)
 
         if table not in patterns:
             patterns[table] = {}
         if base_query not in patterns[table]:
-            patterns[table][base_query] = {"count": 0, "total_ms": 0.0, "sql": sql}
-        patterns[table][base_query]["count"] += 1
-        patterns[table][base_query]["total_ms"] += duration
+            patterns[table][base_query] = {'count': 0, 'total_ms': 0.0, 'sql': sql}
+        patterns[table][base_query]['count'] += 1
+        patterns[table][base_query]['total_ms'] += duration
 
     results: list[dict[str, Any]] = []
     for table, queries in patterns.items():
         for info in queries.values():
-            if info["count"] >= 3:
-                results.append({
-                    "table": table,
-                    "count": info["count"],
-                    "total_ms": round(info["total_ms"], 2),
-                    "sql": info["sql"],
-                })
+            if info['count'] >= 3:
+                results.append(
+                    {
+                        'table': table,
+                        'count': info['count'],
+                        'total_ms': round(info['total_ms'], 2),
+                        'sql': info['sql'],
+                    }
+                )
 
-    results.sort(key=lambda x: x["count"], reverse=True)
+    results.sort(key=lambda x: x['count'], reverse=True)
     return results
 
 
@@ -175,22 +179,22 @@ def _substitute_params(sql: str, params: Any) -> str:
     """
     if isinstance(params, dict):
         for key, value in params.items():
-            sql = sql.replace(f"%({key})s", _quote(value))
+            sql = sql.replace(f'%({key})s', _quote(value))
         return sql
 
     if isinstance(params, (list, tuple)):
         values = [_quote(v) for v in params]
         # Пробуем ? плейсхолдеры
-        if "?" in sql:
-            parts = sql.split("?", len(values))
-            return "".join(
-                p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values)))
+        if '?' in sql:
+            parts = sql.split('?', len(values))
+            return ''.join(
+                p + v for p, v in zip(parts, values + [''] * max(0, len(parts) - len(values)))
             )
         # Пробуем %s плейсхолдеры
-        if "%s" in sql:
-            parts = sql.split("%s", len(values))
-            return "".join(
-                p + v for p, v in zip(parts, values + [""] * max(0, len(parts) - len(values)))
+        if '%s' in sql:
+            parts = sql.split('%s', len(values))
+            return ''.join(
+                p + v for p, v in zip(parts, values + [''] * max(0, len(parts) - len(values)))
             )
 
     return sql
@@ -206,9 +210,9 @@ def _quote(value: Any) -> str:
         Строковое представление значения, безопасное для SQL.
     """
     if value is None:
-        return "NULL"
+        return 'NULL'
     if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
+        return 'TRUE' if value else 'FALSE'
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, bytes):

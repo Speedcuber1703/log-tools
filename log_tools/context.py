@@ -4,6 +4,7 @@
 или декоратор. Автоматически сохраняет логи в файл при отсутствии
 родительского коллектора.
 """
+
 from __future__ import annotations
 
 import types
@@ -13,7 +14,7 @@ from typing import Any, TypeVar
 
 from .collector import Collector, Source, current_collector
 
-F = TypeVar("F", bound=Callable[..., Any])
+F = TypeVar('F', bound=Callable[..., Any])
 
 DEFAULT_SLOW_THRESHOLD_MS: float = 100
 
@@ -120,14 +121,15 @@ class LogContext:
         и включённой настройке ``LOG_TOOLS_FILE_STORAGE``.
         """
         from .settings import LOG_TOOLS
+
         if not LOG_TOOLS.FILE_STORAGE:
             return
 
         from .file_storage import get_file_storage, RequestLog
         from ._serialization import serialize_entry
 
-        parts = collector.name.split(" ", 1)
-        method = collector.command_name or (parts[0] if parts else "")
+        parts = collector.name.split(' ', 1)
+        method = collector.command_name or (parts[0] if parts else '')
         path = parts[1] if len(parts) > 1 else collector.name
 
         storage = get_file_storage()

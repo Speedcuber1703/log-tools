@@ -6,6 +6,7 @@
 Формат файла — JSONL (одна JSON-запись на строку), что позволяет
 эффективно дозаписывать новые логи без перезаписи всего файла.
 """
+
 from __future__ import annotations
 
 import json
@@ -86,20 +87,20 @@ class FileLogStorage:
             log: Лог запроса для сохранения.
         """
         with self._lock:
-            with open(self.file_path, "a", encoding="utf-8") as f:
-                source_val = log.source.value if hasattr(log.source, "value") else log.source
+            with open(self.file_path, 'a', encoding='utf-8') as f:
+                source_val = log.source.value if hasattr(log.source, 'value') else log.source
                 record = {
-                    "method": log.method,
-                    "path": log.path,
-                    "status_code": log.status_code,
-                    "elapsed_ms": log.elapsed_ms,
-                    "timestamp": log.timestamp,
-                    "summary": log.summary,
-                    "entries": log.entries,
-                    "source": source_val,
-                    "command_name": log.command_name,
+                    'method': log.method,
+                    'path': log.path,
+                    'status_code': log.status_code,
+                    'elapsed_ms': log.elapsed_ms,
+                    'timestamp': log.timestamp,
+                    'summary': log.summary,
+                    'entries': log.entries,
+                    'source': source_val,
+                    'command_name': log.command_name,
                 }
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
             self._truncate_if_needed()
 
@@ -110,10 +111,10 @@ class FileLogStorage:
         """
         logs = self._read_all()
         if len(logs) > self.max_size:
-            logs = logs[-self.max_size:]
-            with open(self.file_path, "w", encoding="utf-8") as f:
+            logs = logs[-self.max_size :]
+            with open(self.file_path, 'w', encoding='utf-8') as f:
                 for record in logs:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     def _read_all(self) -> list[dict[str, Any]]:
         """Читает все записи из файла.
@@ -127,14 +128,14 @@ class FileLogStorage:
             return []
 
         records: list[dict[str, Any]] = []
-        with open(self.file_path, "r", encoding="utf-8") as f:
+        with open(self.file_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line:
                     try:
                         records.append(json.loads(line))
                     except json.JSONDecodeError:
-                        logger.debug("Пропуск повреждённой строки в %s", self.file_path)
+                        logger.debug('Пропуск повреждённой строки в %s', self.file_path)
                         continue
         return records
 
@@ -155,15 +156,15 @@ class FileLogStorage:
 
         return [
             RequestLog(
-                method=r["method"],
-                path=r["path"],
-                status_code=r["status_code"],
-                elapsed_ms=r["elapsed_ms"],
-                timestamp=r.get("timestamp", 0),
-                summary=r.get("summary", {}),
-                entries=r.get("entries", []),
-                source=Source(r.get("source", Source.HTTP.value)),
-                command_name=r.get("command_name"),
+                method=r['method'],
+                path=r['path'],
+                status_code=r['status_code'],
+                elapsed_ms=r['elapsed_ms'],
+                timestamp=r.get('timestamp', 0),
+                summary=r.get('summary', {}),
+                entries=r.get('entries', []),
+                source=Source(r.get('source', Source.HTTP.value)),
+                command_name=r.get('command_name'),
             )
             for r in records
         ]
@@ -184,7 +185,7 @@ class FileLogStorage:
         """
         if not os.path.exists(self.file_path):
             return 0
-        with open(self.file_path, "r", encoding="utf-8") as f:
+        with open(self.file_path, 'r', encoding='utf-8') as f:
             return sum(1 for line in f if line.strip())
 
     def aggregate_stats(self) -> dict[str, Any]:
@@ -206,38 +207,38 @@ class FileLogStorage:
         sql_texts: dict[str, dict[str, Any]] = {}
 
         for log in logs:
-            total_sql += log.summary.get("sql_count", 0)
-            total_redis += log.summary.get("redis_count", 0)
+            total_sql += log.summary.get('sql_count', 0)
+            total_redis += log.summary.get('redis_count', 0)
             total_elapsed_ms += log.elapsed_ms
 
             for entry in log.entries:
-                if entry.get("type") == EntryType.SQL.value:
-                    data = entry.get("data") or {}
-                    raw_sql = data.get("sql", "")
+                if entry.get('type') == EntryType.SQL.value:
+                    data = entry.get('data') or {}
+                    raw_sql = data.get('sql', '')
                     normalized = normalize_sql(raw_sql)
                     if normalized not in sql_texts:
-                        sql_texts[normalized] = {"sql": raw_sql, "count": 0, "total_ms": 0.0}
-                    sql_texts[normalized]["count"] += 1
-                    sql_texts[normalized]["total_ms"] += entry.get("duration_ms") or 0
+                        sql_texts[normalized] = {'sql': raw_sql, 'count': 0, 'total_ms': 0.0}
+                    sql_texts[normalized]['count'] += 1
+                    sql_texts[normalized]['total_ms'] += entry.get('duration_ms') or 0
 
         duplicates = [
-            {"sql": v["sql"], "count": v["count"], "total_ms": round(v["total_ms"], 2)}
+            {'sql': v['sql'], 'count': v['count'], 'total_ms': round(v['total_ms'], 2)}
             for v in sql_texts.values()
-            if v["count"] > 1
+            if v['count'] > 1
         ]
-        duplicates.sort(key=lambda x: x["count"], reverse=True)
+        duplicates.sort(key=lambda x: x['count'], reverse=True)
 
         avg_elapsed = round(total_elapsed_ms / total_requests, 1) if total_requests else 0
 
         return {
-            "total_requests": total_requests,
-            "total_sql": total_sql,
-            "total_redis": total_redis,
-            "total_elapsed_ms": round(total_elapsed_ms, 1),
-            "avg_elapsed_ms": avg_elapsed,
-            "unique_sql": len(sql_texts),
-            "duplicate_sql_count": len(duplicates),
-            "duplicates": duplicates,
+            'total_requests': total_requests,
+            'total_sql': total_sql,
+            'total_redis': total_redis,
+            'total_elapsed_ms': round(total_elapsed_ms, 1),
+            'avg_elapsed_ms': avg_elapsed,
+            'unique_sql': len(sql_texts),
+            'duplicate_sql_count': len(duplicates),
+            'duplicates': duplicates,
         }
 
 
@@ -261,10 +262,10 @@ def get_file_storage() -> FileLogStorage:
                 from django.conf import settings
                 from .settings import LOG_TOOLS
 
-                base_dir = getattr(settings, "BASE_DIR", ".")
-                file_path = getattr(settings, "LOG_TOOLS_FILE_PATH", None)
+                base_dir = getattr(settings, 'BASE_DIR', '.')
+                file_path = getattr(settings, 'LOG_TOOLS_FILE_PATH', None)
                 if file_path is None:
-                    file_path = os.path.join(str(base_dir), "log_tools_logs.jsonl")
+                    file_path = os.path.join(str(base_dir), 'log_tools_logs.jsonl')
 
                 _file_storage = FileLogStorage(file_path=file_path, max_size=LOG_TOOLS.HISTORY_SIZE)
     return _file_storage
